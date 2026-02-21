@@ -1,0 +1,308 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>IntellectFlow | Bandwidth-Aware Scheduler</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        .topic-card {
+            transition: all 0.2s ease;
+        }
+
+        .topic-card:hover {
+            transform: translateY(-2px);
+        }
+
+        .fade-in {
+            animation: fadeIn 0.3s ease-in;
+        }
+
+        @keyframes fadeIn {
+            from {
+                opacity: 0;
+            }
+
+            to {
+                opacity: 1;
+            }
+        }
+    </style>
+</head>
+
+<body class="bg-slate-50 text-slate-900 font-sans min-h-screen">
+
+    <div class="max-w-4xl mx-auto p-6">
+        <header class="mb-8 flex flex-col md:flex-row justify-between items-start md:items-end gap-4">
+            <div>
+                <h1 class="text-3xl font-bold text-indigo-600">IntellectFlow</h1>
+                <p class="text-slate-500">Master content without the burnout.</p>
+            </div>
+            <div class="flex gap-4 items-end">
+                <div class="text-right">
+                    <label class="block text-xs font-semibold uppercase text-slate-400">Daily Capacity (Min)</label>
+                    <input type="number" id="dailyCap" value="120" onchange="render()"
+                        class="w-20 text-right bg-transparent border-b-2 border-indigo-200 focus:border-indigo-500 outline-none text-lg font-bold">
+                </div>
+                <div class="flex flex-col gap-1">
+                    <button onclick="exportData()"
+                        class="text-[10px] uppercase font-bold text-indigo-500 hover:text-indigo-700">Backup
+                        (.json)</button>
+                    <button onclick="document.getElementById('importFile').click()"
+                        class="text-[10px] uppercase font-bold text-slate-400 hover:text-slate-600">Restore</button>
+                    <input type="file" id="importFile" class="hidden" accept=".json" onchange="importData(event)">
+                </div>
+            </div>
+        </header>
+
+        <section class="bg-white p-6 rounded-2xl shadow-sm mb-8 border border-slate-100 transition-colors"
+            id="entryForm">
+            <div class="flex justify-between items-center mb-4">
+                <h2 class="text-sm font-semibold uppercase tracking-wider text-slate-400" id="formTitle">Add New Topic
+                </h2>
+                <button id="cancelEditBtn" onclick="cancelEdit()"
+                    class="hidden text-xs text-red-500 hover:underline">Cancel Edit</button>
+            </div>
+            <div class="flex flex-col md:flex-row gap-4">
+                <input type="hidden" id="editId">
+                <input type="text" id="topicName" placeholder="e.g., Software Engineering at Google Ch.1"
+                    class="flex-1 p-3 rounded-xl border border-slate-200 focus:ring-2 focus:ring-indigo-500 outline-none">
+                <select id="topicWeight" class="p-3 rounded-xl border border-slate-200 outline-none bg-white">
+                    <option value="20">Quick Review (20m)</option>
+                    <option value="45" selected>Standard Session (45m)</option>
+                    <option value="90">Deep Dive (90m)</option>
+                </select>
+                <button id="mainBtn" onclick="handleTopicSubmit()"
+                    class="bg-indigo-600 text-white px-8 py-3 rounded-xl font-semibold hover:bg-indigo-700 transition-all shadow-md">Add
+                    to Queue</button>
+            </div>
+        </section>
+
+        <section class="mb-12">
+            <div class="flex justify-between items-center mb-6">
+                <h2 class="text-xl font-bold">Today's Optimized Agenda</h2>
+                <div id="loadIndicator" class="text-sm font-medium px-4 py-1 rounded-full">
+                    Load: 0 / 120 min
+                </div>
+            </div>
+            <div id="agendaList" class="space-y-4"></div>
+            <div id="overflowNotice"
+                class="mt-6 p-4 bg-amber-50 text-amber-700 rounded-xl text-sm hidden border border-amber-100">
+                ⚠️ Some topics have been deferred to tomorrow to prevent burnout.
+            </div>
+        </section>
+
+        <section class="border-t border-slate-200 pt-8">
+            <div class="flex justify-between items-center mb-6">
+                <h2 class="text-lg font-bold text-slate-700">Topic Library</h2>
+                <input type="text" id="searchInput" onkeyup="renderLibrary()" placeholder="Search topics..."
+                    class="p-2 px-4 rounded-full border border-slate-200 text-sm focus:outline-none focus:border-indigo-400 w-48 transition-all focus:w-64">
+            </div>
+            <div id="libraryList" class="grid grid-cols-1 md:grid-cols-2 gap-4 text-sm"></div>
+        </section>
+    </div>
+
+    <script>
+        let topics = JSON.parse(localStorage.getItem('study-topics')) || [];
+        let isEditing = false;
+
+        function save() {
+            localStorage.setItem('study-topics', JSON.stringify(topics));
+            render();
+            renderLibrary();
+        }
+
+        function handleTopicSubmit() {
+            const name = document.getElementById('topicName').value;
+            const weight = parseInt(document.getElementById('topicWeight').value);
+            const id = document.getElementById('editId').value;
+
+            if (!name) return;
+
+            if (isEditing && id) {
+                // Update existing
+                const index = topics.findIndex(t => t.id == id);
+                if (index !== -1) {
+                    topics[index].name = name;
+                    topics[index].weight = weight;
+                }
+                cancelEdit();
+            } else {
+                // Add new
+                topics.push({
+                    id: Date.now(),
+                    name,
+                    weight,
+                    nextReview: new Date().toISOString().split('T')[0],
+                    interval: 1,
+                    streak: 0
+                });
+                document.getElementById('topicName').value = '';
+            }
+            save();
+        }
+
+        function editTopic(id) {
+            const topic = topics.find(t => t.id == id);
+            if (!topic) return;
+
+            isEditing = true;
+            document.getElementById('editId').value = topic.id;
+            document.getElementById('topicName').value = topic.name;
+            document.getElementById('topicWeight').value = topic.weight;
+
+            // UI Updates
+            document.getElementById('mainBtn').innerText = "Update Topic";
+            document.getElementById('mainBtn').classList.replace('bg-indigo-600', 'bg-emerald-600');
+            document.getElementById('mainBtn').classList.replace('hover:bg-indigo-700', 'hover:bg-emerald-700');
+            document.getElementById('formTitle').innerText = "Edit Topic";
+            document.getElementById('cancelEditBtn').classList.remove('hidden');
+            document.getElementById('entryForm').classList.add('ring-2', 'ring-emerald-100');
+
+            window.scrollTo({ top: 0, behavior: 'smooth' });
+        }
+
+        function cancelEdit() {
+            isEditing = false;
+            document.getElementById('editId').value = '';
+            document.getElementById('topicName').value = '';
+            document.getElementById('topicWeight').value = '45';
+
+            // UI Reset
+            document.getElementById('mainBtn').innerText = "Add to Queue";
+            document.getElementById('mainBtn').classList.replace('bg-emerald-600', 'bg-indigo-600');
+            document.getElementById('mainBtn').classList.replace('hover:bg-emerald-700', 'hover:bg-indigo-700');
+            document.getElementById('formTitle').innerText = "Add New Topic";
+            document.getElementById('cancelEditBtn').classList.add('hidden');
+            document.getElementById('entryForm').classList.remove('ring-2', 'ring-emerald-100');
+        }
+
+        function deleteTopic(id) {
+            if (confirm("Are you sure you want to delete this topic?")) {
+                topics = topics.filter(t => t.id != id);
+                save();
+            }
+        }
+
+        function completeTopic(id, difficulty) {
+            const topic = topics.find(t => t.id === id);
+            const multipliers = { easy: 2.5, medium: 1.5, hard: 0 };
+
+            if (difficulty === 'hard') {
+                topic.interval = 1;
+                topic.streak = 0;
+            } else {
+                topic.interval *= multipliers[difficulty];
+                topic.streak += 1;
+            }
+
+            let next = new Date();
+            next.setDate(next.getDate() + Math.ceil(topic.interval));
+            topic.nextReview = next.toISOString().split('T')[0];
+            save();
+        }
+
+        // --- Render Functions ---
+
+        function render() {
+            const agendaList = document.getElementById('agendaList');
+            const loadIndicator = document.getElementById('loadIndicator');
+            const overflowNotice = document.getElementById('overflowNotice');
+            const dailyCap = parseInt(document.getElementById('dailyCap').value);
+            const today = new Date().toISOString().split('T')[0];
+
+            let currentLoad = 0;
+            let hasOverflow = false;
+            agendaList.innerHTML = '';
+
+            const dueTopics = topics.filter(t => t.nextReview <= today).sort((a, b) => a.weight - b.weight);
+
+            dueTopics.forEach(topic => {
+                if (currentLoad + topic.weight <= dailyCap) {
+                    currentLoad += topic.weight;
+                    const card = document.createElement('div');
+                    card.className = "topic-card bg-white p-5 rounded-2xl shadow-sm border-l-4 border-indigo-500 flex flex-col md:flex-row justify-between items-center gap-4 border border-slate-100 fade-in";
+                    card.innerHTML = `
+                        <div class="flex-1">
+                            <h3 class="font-bold text-lg">${topic.name}</h3>
+                            <div class="flex gap-3 text-xs text-slate-400 mt-1 uppercase font-semibold">
+                                <span>⏱️ ${topic.weight} min</span>
+                                <span>🔥 Streak: ${topic.streak}</span>
+                            </div>
+                        </div>
+                        <div class="flex gap-2">
+                            <button onclick="completeTopic(${topic.id}, 'hard')" class="px-3 py-2 text-xs font-bold rounded-lg border border-red-200 text-red-600 hover:bg-red-50">Struggled</button>
+                            <button onclick="completeTopic(${topic.id}, 'medium')" class="px-3 py-2 text-xs font-bold rounded-lg border border-amber-200 text-amber-600 hover:bg-amber-50">Okay</button>
+                            <button onclick="completeTopic(${topic.id}, 'easy')" class="px-4 py-2 text-xs font-bold bg-green-600 text-white rounded-lg hover:bg-green-700">Mastered</button>
+                        </div>`;
+                    agendaList.appendChild(card);
+                } else { hasOverflow = true; }
+            });
+
+            if (agendaList.innerHTML === '') {
+                agendaList.innerHTML = `<div class="text-center py-12 text-slate-400 bg-slate-100 rounded-xl">Rest your brain. All tasks complete!</div>`;
+            }
+
+            loadIndicator.innerText = `Load: ${currentLoad} / ${dailyCap} min`;
+            loadIndicator.className = `text-sm font-medium px-4 py-1 rounded-full ${currentLoad > dailyCap * 0.9 ? 'bg-amber-100 text-amber-700' : 'bg-green-100 text-green-700'}`;
+            overflowNotice.classList.toggle('hidden', !hasOverflow);
+        }
+
+        function renderLibrary() {
+            const libraryList = document.getElementById('libraryList');
+            const searchTerm = document.getElementById('searchInput').value.toLowerCase();
+
+            libraryList.innerHTML = '';
+
+            const filtered = topics.filter(t => t.name.toLowerCase().includes(searchTerm));
+
+            filtered.forEach(topic => {
+                const item = document.createElement('div');
+                item.className = "flex justify-between items-center p-3 bg-white rounded-lg border border-slate-100 hover:shadow-sm";
+                item.innerHTML = `
+                    <div>
+                        <div class="font-semibold text-slate-700">${topic.name}</div>
+                        <div class="text-xs text-slate-400">Next: ${topic.nextReview}</div>
+                    </div>
+                    <div class="flex gap-2">
+                        <button onclick="editTopic(${topic.id})" class="text-slate-400 hover:text-indigo-600 p-1">✏️</button>
+                        <button onclick="deleteTopic(${topic.id})" class="text-slate-400 hover:text-red-600 p-1">🗑️</button>
+                    </div>
+                `;
+                libraryList.appendChild(item);
+            });
+        }
+
+        // Backup/Restore Logic
+        function exportData() {
+            const dataStr = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify(topics));
+            const node = document.createElement('a');
+            node.setAttribute("href", dataStr);
+            node.setAttribute("download", "intellectflow_backup_" + new Date().toISOString().split('T')[0] + ".json");
+            document.body.appendChild(node);
+            node.click();
+            node.remove();
+        }
+
+        function importData(event) {
+            const reader = new FileReader();
+            reader.onload = (e) => {
+                try {
+                    const imported = JSON.parse(e.target.result);
+                    if (Array.isArray(imported)) {
+                        topics = imported;
+                        save();
+                        alert("Data successfully restored!");
+                    }
+                } catch (err) { alert("Invalid file format."); }
+            };
+            reader.readAsText(event.target.files[0]);
+        }
+
+        render();
+        renderLibrary();
+    </script>
+</body>
+
+</html>
