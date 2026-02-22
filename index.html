@@ -60,6 +60,40 @@
             </div>
         </header>
 
+        <section class="bg-white p-4 rounded-2xl shadow-sm mb-8 border border-slate-100">
+            <div class="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
+                <div>
+                    <div class="text-xs font-semibold uppercase tracking-wider text-slate-400 mb-1">Cloud Sync</div>
+                    <div class="text-sm text-slate-600">Sign in to sync your study topics across devices.</div>
+                    <div id="syncStatus"
+                        class="inline-flex mt-2 text-xs font-semibold px-3 py-1 rounded-full bg-slate-100 text-slate-600">
+                        Local only (not signed in)
+                    </div>
+                </div>
+                <div class="flex flex-col md:flex-row gap-2 md:items-center w-full md:w-auto">
+                    <input type="email" id="authEmail" placeholder="Email"
+                        class="p-2 px-3 rounded-xl border border-slate-200 text-sm outline-none focus:border-indigo-400">
+                    <input type="password" id="authPassword" placeholder="Password"
+                        class="p-2 px-3 rounded-xl border border-slate-200 text-sm outline-none focus:border-indigo-400">
+                    <button id="signUpBtn" onclick="signUp()"
+                        class="px-3 py-2 rounded-xl text-xs font-semibold border border-slate-200 text-slate-700 hover:bg-slate-50">Sign
+                        Up</button>
+                    <button id="signInBtn" onclick="signIn()"
+                        class="px-3 py-2 rounded-xl text-xs font-semibold bg-indigo-600 text-white hover:bg-indigo-700">Sign
+                        In</button>
+                    <button id="syncNowBtn" onclick="syncNow()" disabled
+                        class="px-3 py-2 rounded-xl text-xs font-semibold border border-indigo-200 text-indigo-700 hover:bg-indigo-50 disabled:opacity-40 disabled:cursor-not-allowed">Sync
+                        Now</button>
+                    <button id="signOutBtn" onclick="signOut()" disabled
+                        class="px-3 py-2 rounded-xl text-xs font-semibold border border-red-200 text-red-600 hover:bg-red-50 disabled:opacity-40 disabled:cursor-not-allowed">Sign
+                        Out</button>
+                </div>
+            </div>
+            <p id="cloudConfigHint" class="text-xs text-slate-400 mt-3 hidden">
+                Cloud sync is disabled until you add your Supabase URL and anon key in the script config.
+            </p>
+        </section>
+
         <section class="bg-white p-6 rounded-2xl shadow-sm mb-8 border border-slate-100 transition-colors"
             id="entryForm">
             <div class="flex justify-between items-center mb-4">
@@ -108,17 +142,271 @@
     </div>
 
     <script>
-        let topics = JSON.parse(localStorage.getItem('study-topics')) || [];
+        // Cloud sync setup (Supabase)
+        // Replace these with your own project values from Supabase > Project Settings > API.
+        const SUPABASE_URL = 'https://onqncpdvxjlkraqybmfz.supabase.co';
+        const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im9ucW5jcGR2eGpsa3JhcXlibWZ6Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzE3NDYxODUsImV4cCI6MjA4NzMyMjE4NX0.xonXlN-kUPTV_9C269hFObWz4VWiq23wpj-TmschhDw';
+        const STORAGE_KEY = 'study-topics';
+
+        let topics = loadLocalTopics();
         let isEditing = false;
+        let supabase = null;
+        let currentUser = null;
+        let saveTimer = null;
+        let syncInFlight = false;
+        let isHydratingRemote = false;
+
+        function loadLocalTopics() {
+            try {
+                return normalizeTopics(JSON.parse(localStorage.getItem(STORAGE_KEY)) || []);
+            } catch {
+                return [];
+            }
+        }
+
+        function normalizeTopics(raw) {
+            if (!Array.isArray(raw)) return [];
+            return raw
+                .filter(item => item && typeof item === 'object')
+                .map(item => ({
+                    id: Number(item.id) || Date.now() + Math.floor(Math.random() * 1000),
+                    name: String(item.name || '').trim(),
+                    weight: Number(item.weight) || 45,
+                    nextReview: String(item.nextReview || new Date().toISOString().split('T')[0]),
+                    interval: Number(item.interval) || 1,
+                    streak: Number(item.streak) || 0
+                }))
+                .filter(item => item.name);
+        }
+
+        function escapeHtml(value) {
+            return String(value)
+                .replace(/&/g, '&amp;')
+                .replace(/</g, '&lt;')
+                .replace(/>/g, '&gt;')
+                .replace(/"/g, '&quot;')
+                .replace(/'/g, '&#39;');
+        }
 
         function save() {
-            localStorage.setItem('study-topics', JSON.stringify(topics));
+            localStorage.setItem(STORAGE_KEY, JSON.stringify(topics));
             render();
             renderLibrary();
+            queueRemoteSave();
+        }
+
+        function setSyncStatus(text, tone = 'slate') {
+            const el = document.getElementById('syncStatus');
+            if (!el) return;
+            const toneClasses = {
+                slate: 'bg-slate-100 text-slate-600',
+                indigo: 'bg-indigo-100 text-indigo-700',
+                green: 'bg-green-100 text-green-700',
+                amber: 'bg-amber-100 text-amber-700',
+                red: 'bg-red-100 text-red-700'
+            };
+            el.className = `inline-flex mt-2 text-xs font-semibold px-3 py-1 rounded-full ${toneClasses[tone] || toneClasses.slate}`;
+            el.textContent = text;
+        }
+
+        function updateAuthControls() {
+            const signedIn = !!currentUser;
+            const cloudReady = !!supabase;
+
+            document.getElementById('signUpBtn').disabled = !cloudReady || signedIn;
+            document.getElementById('signInBtn').disabled = !cloudReady || signedIn;
+            document.getElementById('syncNowBtn').disabled = !cloudReady || !signedIn || syncInFlight;
+            document.getElementById('signOutBtn').disabled = !cloudReady || !signedIn;
+            document.getElementById('authEmail').disabled = !cloudReady || signedIn;
+            document.getElementById('authPassword').disabled = !cloudReady || signedIn;
+
+            if (signedIn) {
+                document.getElementById('authPassword').value = '';
+            }
+        }
+
+        function queueRemoteSave() {
+            if (!supabase || !currentUser || isHydratingRemote) return;
+            clearTimeout(saveTimer);
+            saveTimer = setTimeout(() => {
+                syncNow();
+            }, 500);
+        }
+
+        async function initCloudSync() {
+            const hint = document.getElementById('cloudConfigHint');
+
+            if (!SUPABASE_URL || !SUPABASE_ANON_KEY) {
+                hint.classList.remove('hidden');
+                setSyncStatus('Local only (add Supabase config to enable cloud sync)', 'amber');
+                updateAuthControls();
+                return;
+            }
+
+            try {
+                setSyncStatus('Initializing cloud sync...', 'indigo');
+                const module = await import('https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/+esm');
+                supabase = module.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+
+                const { data, error } = await supabase.auth.getSession();
+                if (error) throw error;
+
+                currentUser = data.session?.user || null;
+                updateAuthControls();
+
+                if (currentUser) {
+                    await loadRemoteTopics();
+                } else {
+                    setSyncStatus('Local only (not signed in)', 'slate');
+                }
+
+                supabase.auth.onAuthStateChange(async (_event, session) => {
+                    currentUser = session?.user || null;
+                    updateAuthControls();
+
+                    if (currentUser) {
+                        await loadRemoteTopics();
+                    } else {
+                        setSyncStatus('Local only (not signed in)', 'slate');
+                    }
+                });
+            } catch (error) {
+                console.error(error);
+                setSyncStatus('Cloud sync init failed', 'red');
+                updateAuthControls();
+            }
+        }
+
+        async function loadRemoteTopics() {
+            if (!supabase || !currentUser) return;
+
+            try {
+                setSyncStatus('Loading from cloud...', 'indigo');
+                isHydratingRemote = true;
+                const { data, error } = await supabase
+                    .from('user_study_data')
+                    .select('topics, updated_at')
+                    .eq('user_id', currentUser.id)
+                    .maybeSingle();
+
+                if (error) throw error;
+
+                if (data && Array.isArray(data.topics)) {
+                    topics = normalizeTopics(data.topics);
+                    localStorage.setItem(STORAGE_KEY, JSON.stringify(topics));
+                    render();
+                    renderLibrary();
+                    setSyncStatus(`Synced (${new Date(data.updated_at || Date.now()).toLocaleString()})`, 'green');
+                } else {
+                    setSyncStatus('Signed in (no cloud data yet)', 'green');
+                    queueRemoteSave();
+                }
+            } catch (error) {
+                console.error(error);
+                setSyncStatus('Failed to load cloud data', 'red');
+            } finally {
+                isHydratingRemote = false;
+                updateAuthControls();
+            }
+        }
+
+        async function syncNow() {
+            if (!supabase || !currentUser || syncInFlight) return;
+
+            try {
+                syncInFlight = true;
+                updateAuthControls();
+                setSyncStatus('Syncing to cloud...', 'indigo');
+
+                const payload = {
+                    user_id: currentUser.id,
+                    topics,
+                    updated_at: new Date().toISOString()
+                };
+
+                const { error } = await supabase
+                    .from('user_study_data')
+                    .upsert(payload, { onConflict: 'user_id' });
+
+                if (error) throw error;
+                setSyncStatus(`Synced (${new Date().toLocaleTimeString()})`, 'green');
+            } catch (error) {
+                console.error(error);
+                setSyncStatus('Cloud sync failed', 'red');
+            } finally {
+                syncInFlight = false;
+                updateAuthControls();
+            }
+        }
+
+        function getAuthCredentials() {
+            return {
+                email: document.getElementById('authEmail').value.trim(),
+                password: document.getElementById('authPassword').value
+            };
+        }
+
+        async function signUp() {
+            if (!supabase) return;
+            const { email, password } = getAuthCredentials();
+            if (!email || !password) {
+                alert('Enter email and password first.');
+                return;
+            }
+
+            try {
+                setSyncStatus('Creating account...', 'indigo');
+                const { error } = await supabase.auth.signUp({
+                    email,
+                    password,
+                    options: {
+                        emailRedirectTo: window.location.href.split('#')[0]
+                    }
+                });
+                if (error) throw error;
+                setSyncStatus('Account created. Sign in (or confirm email if required).', 'amber');
+            } catch (error) {
+                console.error(error);
+                setSyncStatus('Sign up failed', 'red');
+                alert(error.message || 'Sign up failed.');
+            }
+        }
+
+        async function signIn() {
+            if (!supabase) return;
+            const { email, password } = getAuthCredentials();
+            if (!email || !password) {
+                alert('Enter email and password first.');
+                return;
+            }
+
+            try {
+                setSyncStatus('Signing in...', 'indigo');
+                const { error } = await supabase.auth.signInWithPassword({ email, password });
+                if (error) throw error;
+                setSyncStatus('Signed in', 'green');
+            } catch (error) {
+                console.error(error);
+                setSyncStatus('Sign in failed', 'red');
+                alert(error.message || 'Sign in failed.');
+            }
+        }
+
+        async function signOut() {
+            if (!supabase) return;
+            try {
+                await supabase.auth.signOut();
+                currentUser = null;
+                updateAuthControls();
+                setSyncStatus('Local only (not signed in)', 'slate');
+            } catch (error) {
+                console.error(error);
+                setSyncStatus('Sign out failed', 'red');
+            }
         }
 
         function handleTopicSubmit() {
-            const name = document.getElementById('topicName').value;
+            const name = document.getElementById('topicName').value.trim();
             const weight = parseInt(document.getElementById('topicWeight').value);
             const id = document.getElementById('editId').value;
 
@@ -229,7 +517,7 @@
                     card.className = "topic-card bg-white p-5 rounded-2xl shadow-sm border-l-4 border-indigo-500 flex flex-col md:flex-row justify-between items-center gap-4 border border-slate-100 fade-in";
                     card.innerHTML = `
                         <div class="flex-1">
-                            <h3 class="font-bold text-lg">${topic.name}</h3>
+                            <h3 class="font-bold text-lg">${escapeHtml(topic.name)}</h3>
                             <div class="flex gap-3 text-xs text-slate-400 mt-1 uppercase font-semibold">
                                 <span>⏱️ ${topic.weight} min</span>
                                 <span>🔥 Streak: ${topic.streak}</span>
@@ -266,7 +554,7 @@
                 item.className = "flex justify-between items-center p-3 bg-white rounded-lg border border-slate-100 hover:shadow-sm";
                 item.innerHTML = `
                     <div>
-                        <div class="font-semibold text-slate-700">${topic.name}</div>
+                        <div class="font-semibold text-slate-700">${escapeHtml(topic.name)}</div>
                         <div class="text-xs text-slate-400">Next: ${topic.nextReview}</div>
                     </div>
                     <div class="flex gap-2">
@@ -295,7 +583,7 @@
                 try {
                     const imported = JSON.parse(e.target.result);
                     if (Array.isArray(imported)) {
-                        topics = imported;
+                        topics = normalizeTopics(imported);
                         save();
                         alert("Data successfully restored!");
                     }
@@ -306,6 +594,8 @@
 
         render();
         renderLibrary();
+        updateAuthControls();
+        initCloudSync();
     </script>
 </body>
 
