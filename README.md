@@ -1,0 +1,196 @@
+# IntellectFlow
+
+Bandwidth-aware study scheduler for planning review sessions without overloading a day.
+
+Live app: `https://nits41089.github.io/StudyApp/`
+
+## What this app does
+
+- Adds study topics with estimated duration (`20m`, `45m`, `90m`)
+- Builds a daily agenda based on your daily capacity (minutes)
+- Defers overflow topics to avoid burnout
+- Tracks streaks and next-review dates (simple spaced review logic)
+- Lets you edit/delete topics
+- Backup/restore data as JSON
+- Cloud sync across devices using Supabase Auth + Postgres
+- Microsoft Clarity analytics (behavior + custom events)
+
+## Tech stack
+
+- `HTML` (single-page app)
+- `Tailwind CSS` (CDN)
+- `Vanilla JavaScript`
+- `Supabase` (Auth + Postgres for cloud sync)
+- `Microsoft Clarity` (analytics)
+- `GitHub Pages` (hosting)
+
+## Project files
+
+- `index.html` - main app (UI + logic + Supabase sync + Clarity)
+- `SUPABASE_SETUP.md` - detailed Supabase backend setup
+- `favicon.svg`, `apple-touch-icon.png`, `icon-192.png`, `icon-512.png` - icons
+- `site.webmanifest` - mobile install metadata
+
+## Use the app (end user)
+
+### Local-only mode (no sign-in)
+
+1. Open the app
+2. Add topics and choose session length
+3. Set your `Daily Capacity (Min)`
+4. Complete due topics as `Struggled`, `Okay`, or `Mastered`
+5. Data is stored in your browser (`localStorage`)
+
+### Cloud sync mode (use across devices)
+
+1. Sign up with email/password in the `Cloud Sync` section
+2. Confirm your email (if your Supabase project requires confirmation)
+3. Sign in
+4. Your topics will sync to the cloud automatically (and can also be synced manually with `Sync Now`)
+5. Sign in with the same account on another device/browser to load the same data
+
+### Backup and restore
+
+- `Backup (.json)` downloads your topic list
+- `Restore` imports a previous backup file
+
+## Run locally
+
+This is a static app. You can run it either way:
+
+### Option 1: Open directly
+
+- Double-click `index.html`
+
+### Option 2: Local server (recommended)
+
+```bash
+cd /Users/nitinthakur/softwares/StudyApp
+python3 -m http.server 8000
+```
+
+Then open:
+
+- `http://localhost:8000/`
+
+## Configure cloud sync (Supabase)
+
+Detailed guide: `SUPABASE_SETUP.md`
+
+### Summary
+
+1. Create a Supabase project
+2. Create the `user_study_data` table and RLS policies (SQL in `SUPABASE_SETUP.md`)
+3. Enable Email/Auth provider
+4. Configure `Authentication` -> `URL Configuration` for your GitHub Pages URL
+5. Copy `Project URL` + `Publishable key` (or legacy `anon` key)
+6. Paste them into `index.html`
+
+Look for these constants in `index.html`:
+
+```js
+const SUPABASE_URL = '...';
+const SUPABASE_ANON_KEY = '...';
+```
+
+### Security note
+
+- The Supabase publishable/anon key in frontend code is expected and can be public.
+- Security depends on correct RLS policies.
+- Never put a `service_role` key in `index.html`.
+
+## Configure analytics (Microsoft Clarity)
+
+The app includes Microsoft Clarity tracking and custom events.
+
+1. Create a Clarity project for your site
+2. Copy the Clarity project ID
+3. Set/update the project ID in `index.html`:
+
+```js
+const CLARITY_PROJECT_ID = 'YOUR_CLARITY_PROJECT_ID';
+```
+
+### Tracked custom events (examples)
+
+- App load
+- Cloud sync success/failure (auto/manual)
+- Sign up/sign in/sign out
+- Topic add/update/delete
+- Topic completion by difficulty
+- Backup export/import
+
+## Deploy (GitHub Pages)
+
+### First-time deploy
+
+```bash
+cd /Users/nitinthakur/softwares/StudyApp
+git init
+git add .
+git commit -m "Initial commit"
+git branch -M main
+git remote add origin https://github.com/<YOUR_USERNAME>/<YOUR_REPO>.git
+git push -u origin main
+```
+
+Then on GitHub:
+
+1. `Settings` -> `Pages`
+2. Under `Build and deployment`
+3. `Source`: `Deploy from a branch`
+4. Branch: `main`
+5. Folder: `/(root)`
+6. Save
+
+### Update deploys
+
+```bash
+cd /Users/nitinthakur/softwares/StudyApp
+git add .
+git commit -m "Update app"
+git push
+```
+
+## iPhone/iPad install (Add to Home Screen)
+
+1. Open the live site in **Safari**
+2. Tap **Share**
+3. Tap **Add to Home Screen**
+4. Tap **Add**
+
+If the icon looks outdated, remove it and add again (iOS caches icons aggressively).
+
+## Troubleshooting
+
+### Supabase email confirm error: `{"error":"requested path is invalid"}`
+
+Usually a redirect URL issue.
+
+- Set the correct GitHub Pages URL in Supabase `Authentication` -> `URL Configuration`
+- Add both:
+  - `https://<YOUR_USERNAME>.github.io/<YOUR_REPO>/`
+  - `https://<YOUR_USERNAME>.github.io/<YOUR_REPO>/index.html` (optional but useful)
+- Send a new confirmation email after changing settings
+
+See `SUPABASE_SETUP.md` for the full checklist.
+
+### Clarity not showing data
+
+- Confirm the correct `CLARITY_PROJECT_ID` is set
+- Open the live site and interact with it for a minute
+- Check Clarity `Live` and recordings (there can be a short delay)
+
+## Privacy / data notes
+
+- Study topic data is stored locally in browser storage by default
+- If signed in, topic data is also stored in your Supabase project
+- Microsoft Clarity collects usage analytics/session behavior
+- If you have users in regions requiring consent, add a consent banner before enabling analytics
+
+## Future improvements (optional)
+
+- Conflict resolution/merge UI for multi-device edits
+- Better analytics funnel events and dashboards
+- PWA offline caching (service worker)
+- Multi-list / categories / tags

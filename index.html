@@ -9,6 +9,21 @@
     <link rel="icon" type="image/svg+xml" href="favicon.svg">
     <link rel="apple-touch-icon" sizes="180x180" href="apple-touch-icon.png">
     <link rel="manifest" href="site.webmanifest">
+    <script>
+        // Microsoft Clarity (free behavior analytics / real-time live users)
+        // Replace with your actual Clarity Project ID from clarity.microsoft.com -> Settings -> Setup.
+        const CLARITY_PROJECT_ID = 'vlcvx1iz1o';
+        if (CLARITY_PROJECT_ID) {
+            (function (c, l, a, r, i, t, y) {
+                c[a] = c[a] || function () { (c[a].q = c[a].q || []).push(arguments); };
+                t = l.createElement(r);
+                t.async = 1;
+                t.src = "https://www.clarity.ms/tag/" + i;
+                y = l.getElementsByTagName(r)[0];
+                y.parentNode.insertBefore(t, y);
+            })(window, document, "clarity", "script", CLARITY_PROJECT_ID);
+        }
+    </script>
     <script src="https://cdn.tailwindcss.com"></script>
     <style>
         .topic-card {
@@ -155,6 +170,7 @@
         let saveTimer = null;
         let syncInFlight = false;
         let isHydratingRemote = false;
+        let clarityTagCache = {};
 
         function loadLocalTopics() {
             try {
@@ -188,10 +204,39 @@
                 .replace(/'/g, '&#39;');
         }
 
+        function trackClarityEvent(eventName) {
+            if (!eventName || typeof window.clarity !== 'function') return;
+            try {
+                window.clarity('event', String(eventName));
+            } catch (error) {
+                console.warn('Clarity event failed:', error);
+            }
+        }
+
+        function setClarityTag(key, value) {
+            if (!key || value == null || typeof window.clarity !== 'function') return;
+            try {
+                const stringValue = String(value);
+                if (clarityTagCache[key] === stringValue) return;
+                clarityTagCache[key] = stringValue;
+                window.clarity('set', String(key), stringValue);
+            } catch (error) {
+                console.warn('Clarity tag failed:', error);
+            }
+        }
+
+        function updateClarityContext() {
+            setClarityTag('auth_state', currentUser ? 'signed_in' : 'signed_out');
+            setClarityTag('cloud_sync_configured', (SUPABASE_URL && SUPABASE_ANON_KEY) ? 'yes' : 'no');
+            setClarityTag('topic_count', topics.length);
+            setClarityTag('topic_count_bucket', topics.length === 0 ? '0' : topics.length <= 5 ? '1-5' : topics.length <= 20 ? '6-20' : '21+');
+        }
+
         function save() {
             localStorage.setItem(STORAGE_KEY, JSON.stringify(topics));
             render();
             renderLibrary();
+            updateClarityContext();
             queueRemoteSave();
         }
 
@@ -229,7 +274,7 @@
             if (!supabase || !currentUser || isHydratingRemote) return;
             clearTimeout(saveTimer);
             saveTimer = setTimeout(() => {
-                syncNow();
+                syncNow('auto');
             }, 500);
         }
 
@@ -240,6 +285,8 @@
                 hint.classList.remove('hidden');
                 setSyncStatus('Local only (add Supabase config to enable cloud sync)', 'amber');
                 updateAuthControls();
+                updateClarityContext();
+                trackClarityEvent('cloud_sync_not_configured');
                 return;
             }
 
@@ -253,8 +300,10 @@
 
                 currentUser = data.session?.user || null;
                 updateAuthControls();
+                updateClarityContext();
 
                 if (currentUser) {
+                    trackClarityEvent('auth_session_restored');
                     await loadRemoteTopics();
                 } else {
                     setSyncStatus('Local only (not signed in)', 'slate');
@@ -263,6 +312,7 @@
                 supabase.auth.onAuthStateChange(async (_event, session) => {
                     currentUser = session?.user || null;
                     updateAuthControls();
+                    updateClarityContext();
 
                     if (currentUser) {
                         await loadRemoteTopics();
@@ -296,21 +346,25 @@
                     localStorage.setItem(STORAGE_KEY, JSON.stringify(topics));
                     render();
                     renderLibrary();
+                    updateClarityContext();
                     setSyncStatus(`Synced (${new Date(data.updated_at || Date.now()).toLocaleString()})`, 'green');
+                    trackClarityEvent('cloud_data_loaded');
                 } else {
                     setSyncStatus('Signed in (no cloud data yet)', 'green');
+                    trackClarityEvent('cloud_data_empty');
                     queueRemoteSave();
                 }
             } catch (error) {
                 console.error(error);
                 setSyncStatus('Failed to load cloud data', 'red');
+                trackClarityEvent('cloud_data_load_failed');
             } finally {
                 isHydratingRemote = false;
                 updateAuthControls();
             }
         }
 
-        async function syncNow() {
+        async function syncNow(source = 'manual') {
             if (!supabase || !currentUser || syncInFlight) return;
 
             try {
@@ -330,9 +384,11 @@
 
                 if (error) throw error;
                 setSyncStatus(`Synced (${new Date().toLocaleTimeString()})`, 'green');
+                trackClarityEvent(source === 'auto' ? 'cloud_sync_auto' : 'cloud_sync_manual');
             } catch (error) {
                 console.error(error);
                 setSyncStatus('Cloud sync failed', 'red');
+                trackClarityEvent(source === 'auto' ? 'cloud_sync_auto_failed' : 'cloud_sync_manual_failed');
             } finally {
                 syncInFlight = false;
                 updateAuthControls();
@@ -356,6 +412,7 @@
 
             try {
                 setSyncStatus('Creating account...', 'indigo');
+                trackClarityEvent('auth_signup_attempt');
                 const { error } = await supabase.auth.signUp({
                     email,
                     password,
@@ -365,9 +422,11 @@
                 });
                 if (error) throw error;
                 setSyncStatus('Account created. Sign in (or confirm email if required).', 'amber');
+                trackClarityEvent('auth_signup_success');
             } catch (error) {
                 console.error(error);
                 setSyncStatus('Sign up failed', 'red');
+                trackClarityEvent('auth_signup_failed');
                 alert(error.message || 'Sign up failed.');
             }
         }
@@ -382,12 +441,15 @@
 
             try {
                 setSyncStatus('Signing in...', 'indigo');
+                trackClarityEvent('auth_signin_attempt');
                 const { error } = await supabase.auth.signInWithPassword({ email, password });
                 if (error) throw error;
                 setSyncStatus('Signed in', 'green');
+                trackClarityEvent('auth_signin_success');
             } catch (error) {
                 console.error(error);
                 setSyncStatus('Sign in failed', 'red');
+                trackClarityEvent('auth_signin_failed');
                 alert(error.message || 'Sign in failed.');
             }
         }
@@ -398,10 +460,13 @@
                 await supabase.auth.signOut();
                 currentUser = null;
                 updateAuthControls();
+                updateClarityContext();
                 setSyncStatus('Local only (not signed in)', 'slate');
+                trackClarityEvent('auth_signout');
             } catch (error) {
                 console.error(error);
                 setSyncStatus('Sign out failed', 'red');
+                trackClarityEvent('auth_signout_failed');
             }
         }
 
@@ -409,6 +474,7 @@
             const name = document.getElementById('topicName').value.trim();
             const weight = parseInt(document.getElementById('topicWeight').value);
             const id = document.getElementById('editId').value;
+            const action = (isEditing && id) ? 'update' : 'add';
 
             if (!name) return;
 
@@ -433,11 +499,14 @@
                 document.getElementById('topicName').value = '';
             }
             save();
+            trackClarityEvent(action === 'add' ? 'topic_added' : 'topic_updated');
+            setClarityTag('last_topic_weight', weight);
         }
 
         function editTopic(id) {
             const topic = topics.find(t => t.id == id);
             if (!topic) return;
+            trackClarityEvent('topic_edit_started');
 
             isEditing = true;
             document.getElementById('editId').value = topic.id;
@@ -474,6 +543,7 @@
             if (confirm("Are you sure you want to delete this topic?")) {
                 topics = topics.filter(t => t.id != id);
                 save();
+                trackClarityEvent('topic_deleted');
             }
         }
 
@@ -493,6 +563,8 @@
             next.setDate(next.getDate() + Math.ceil(topic.interval));
             topic.nextReview = next.toISOString().split('T')[0];
             save();
+            trackClarityEvent(`topic_completed_${difficulty}`);
+            setClarityTag('last_topic_difficulty', difficulty);
         }
 
         // --- Render Functions ---
@@ -575,9 +647,11 @@
             document.body.appendChild(node);
             node.click();
             node.remove();
+            trackClarityEvent('backup_exported');
         }
 
         function importData(event) {
+            trackClarityEvent('backup_import_attempt');
             const reader = new FileReader();
             reader.onload = (e) => {
                 try {
@@ -585,15 +659,21 @@
                     if (Array.isArray(imported)) {
                         topics = normalizeTopics(imported);
                         save();
+                        trackClarityEvent('backup_import_success');
                         alert("Data successfully restored!");
                     }
-                } catch (err) { alert("Invalid file format."); }
+                } catch (err) {
+                    trackClarityEvent('backup_import_failed');
+                    alert("Invalid file format.");
+                }
             };
             reader.readAsText(event.target.files[0]);
         }
 
         render();
         renderLibrary();
+        updateClarityContext();
+        trackClarityEvent('app_loaded');
         updateAuthControls();
         initCloudSync();
     </script>
