@@ -187,6 +187,7 @@
 
             <div class="mt-6">
                 <div class="text-xs text-slate-400 font-semibold uppercase">Category Reviews (All Time)</div>
+                <div id="categoryRankSource" class="text-[11px] text-slate-400 mt-1">Based on completed reviews</div>
                 <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mt-3">
                     <div class="rounded-xl border border-slate-100 bg-slate-50 p-3">
                         <div class="text-[11px] uppercase tracking-wide text-slate-400 font-semibold mb-2">Descending</div>
@@ -301,6 +302,21 @@
 
         function getCategoryReviewTotals() {
             return activityLog.reduce((totals, day) => mergeCategoryCounts(totals, day.categories || {}), {});
+        }
+
+        function getCategoryTopicTotals() {
+            return topics.reduce((totals, topic) => {
+                const categories = normalizeCategoryList(topic.categories);
+                if (categories.length === 0) {
+                    totals.Uncategorized = (totals.Uncategorized || 0) + 1;
+                    return totals;
+                }
+
+                categories.forEach(category => {
+                    totals[category] = (totals[category] || 0) + 1;
+                });
+                return totals;
+            }, {});
         }
 
         function renderCategoryBadges(categories) {
@@ -989,18 +1005,25 @@
                 `;
             }).join('');
 
-            const categoryTotals = Object.entries(getCategoryReviewTotals());
+            const reviewTotals = Object.entries(getCategoryReviewTotals());
+            const topicTotals = Object.entries(getCategoryTopicTotals());
+            const usingReviewTotals = reviewTotals.length > 0;
+            const categoryTotals = usingReviewTotals ? reviewTotals : topicTotals;
             const desc = [...categoryTotals].sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]));
             const asc = [...categoryTotals].sort((a, b) => a[1] - b[1] || a[0].localeCompare(b[0]));
+            const counterLabel = usingReviewTotals ? 'reviews' : 'topics';
+            document.getElementById('categoryRankSource').textContent = usingReviewTotals
+                ? 'Based on completed reviews (all time)'
+                : 'No review history yet, showing topic counts by category';
 
             const renderCategoryList = (items) => {
                 if (items.length === 0) {
-                    return `<div class="text-xs text-slate-400">No category reviews yet.</div>`;
+                    return `<div class="text-xs text-slate-400">No categories yet.</div>`;
                 }
                 return items.map(([category, count]) => `
                     <div class="flex justify-between items-center text-xs">
                         <span class="text-slate-600 font-medium">${escapeHtml(category)}</span>
-                        <span class="text-slate-500">${count} reviews</span>
+                        <span class="text-slate-500">${count} ${counterLabel}</span>
                     </div>
                 `).join('');
             };
