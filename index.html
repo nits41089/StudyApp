@@ -121,6 +121,8 @@
                 <input type="hidden" id="editId">
                 <input type="text" id="topicName" placeholder="e.g., Software Engineering at Google Ch.1"
                     class="flex-1 p-3 rounded-xl border border-slate-200 focus:ring-2 focus:ring-indigo-500 outline-none">
+                <input type="text" id="topicCategories" placeholder="Categories (comma separated)"
+                    class="flex-1 p-3 rounded-xl border border-slate-200 focus:ring-2 focus:ring-indigo-500 outline-none">
                 <select id="topicWeight" class="p-3 rounded-xl border border-slate-200 outline-none bg-white">
                     <option value="20">Quick Review (20m)</option>
                     <option value="45" selected>Standard Session (45m)</option>
@@ -182,6 +184,20 @@
                 <div class="text-xs text-slate-400 font-semibold uppercase">Difficulty Mix (Last 7 Days)</div>
                 <div id="difficultyBreakdown" class="mt-3 space-y-3"></div>
             </div>
+
+            <div class="mt-6">
+                <div class="text-xs text-slate-400 font-semibold uppercase">Category Reviews (All Time)</div>
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mt-3">
+                    <div class="rounded-xl border border-slate-100 bg-slate-50 p-3">
+                        <div class="text-[11px] uppercase tracking-wide text-slate-400 font-semibold mb-2">Descending</div>
+                        <div id="categoryRankDesc" class="space-y-2"></div>
+                    </div>
+                    <div class="rounded-xl border border-slate-100 bg-slate-50 p-3">
+                        <div class="text-[11px] uppercase tracking-wide text-slate-400 font-semibold mb-2">Ascending</div>
+                        <div id="categoryRankAsc" class="space-y-2"></div>
+                    </div>
+                </div>
+            </div>
         </section>
 
         <section class="border-t border-slate-200 pt-8">
@@ -229,6 +245,75 @@
             }
         }
 
+        function normalizeCategoryList(raw) {
+            const source = Array.isArray(raw)
+                ? raw
+                : typeof raw === 'string'
+                    ? raw.split(',')
+                    : [];
+
+            const seen = new Set();
+            const categories = [];
+
+            source.forEach(item => {
+                const cleaned = String(item || '').replace(/\s+/g, ' ').trim();
+                if (!cleaned) return;
+                const key = cleaned.toLowerCase();
+                if (seen.has(key)) return;
+                seen.add(key);
+                categories.push(cleaned);
+            });
+
+            return categories;
+        }
+
+        function normalizeCategoryCountMap(raw) {
+            if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return {};
+
+            const counts = {};
+            Object.entries(raw).forEach(([category, value]) => {
+                const normalizedCategory = normalizeCategoryList([category])[0];
+                const count = Math.max(0, Number(value) || 0);
+                if (!normalizedCategory || count <= 0) return;
+                counts[normalizedCategory] = (counts[normalizedCategory] || 0) + count;
+            });
+
+            return counts;
+        }
+
+        function mergeCategoryCounts(base, incoming) {
+            const merged = normalizeCategoryCountMap(base);
+            Object.entries(normalizeCategoryCountMap(incoming)).forEach(([category, count]) => {
+                merged[category] = (merged[category] || 0) + count;
+            });
+            return merged;
+        }
+
+        function buildCategoryReviewCountMap(categories) {
+            const normalized = normalizeCategoryList(categories);
+            if (normalized.length === 0) return { Uncategorized: 1 };
+
+            return normalized.reduce((acc, category) => {
+                acc[category] = (acc[category] || 0) + 1;
+                return acc;
+            }, {});
+        }
+
+        function getCategoryReviewTotals() {
+            return activityLog.reduce((totals, day) => mergeCategoryCounts(totals, day.categories || {}), {});
+        }
+
+        function renderCategoryBadges(categories) {
+            const normalized = normalizeCategoryList(categories);
+            if (normalized.length === 0) return '';
+
+            return `
+                <div class="mt-2 flex flex-wrap gap-1.5">
+                    ${normalized.map(category => `<span class="px-2 py-0.5 rounded-full bg-indigo-50 text-indigo-700 text-[10px] font-semibold uppercase tracking-wide">${escapeHtml(category)}</span>`).join('')}
+                </div>
+            `;
+        }
+
         function normalizeTopics(raw) {
             if (!Array.isArray(raw)) return [];
             return raw
@@ -239,7 +324,8 @@
                     weight: Number(item.weight) || 45,
                     nextReview: String(item.nextReview || new Date().toISOString().split('T')[0]),
                     interval: Number(item.interval) || 1,
-                    streak: Number(item.streak) || 0
+                    streak: Number(item.streak) || 0,
+                    categories: normalizeCategoryList(item.categories || item.category || [])
                 }))
                 .filter(item => item.name);
         }
@@ -260,7 +346,8 @@
                     completed: Math.max(0, Number(item.completed) || 0),
                     easy: Math.max(0, Number(item.easy) || 0),
                     medium: Math.max(0, Number(item.medium) || 0),
-                    hard: Math.max(0, Number(item.hard) || 0)
+                    hard: Math.max(0, Number(item.hard) || 0),
+                    categories: normalizeCategoryCountMap(item.categories)
                 };
 
                 const existing = byDate.get(date) || {
@@ -269,7 +356,8 @@
                     completed: 0,
                     easy: 0,
                     medium: 0,
-                    hard: 0
+                    hard: 0,
+                    categories: {}
                 };
 
                 existing.minutes += sanitized.minutes;
@@ -277,6 +365,7 @@
                 existing.easy += sanitized.easy;
                 existing.medium += sanitized.medium;
                 existing.hard += sanitized.hard;
+                existing.categories = mergeCategoryCounts(existing.categories, sanitized.categories);
                 byDate.set(date, existing);
             });
 
@@ -638,6 +727,7 @@
 
         function handleTopicSubmit() {
             const name = document.getElementById('topicName').value.trim();
+            const categories = normalizeCategoryList(document.getElementById('topicCategories').value);
             const weight = parseInt(document.getElementById('topicWeight').value);
             const id = document.getElementById('editId').value;
             const action = (isEditing && id) ? 'update' : 'add';
@@ -650,6 +740,7 @@
                 if (index !== -1) {
                     topics[index].name = name;
                     topics[index].weight = weight;
+                    topics[index].categories = categories;
                 }
                 cancelEdit();
             } else {
@@ -660,9 +751,11 @@
                     weight,
                     nextReview: new Date().toISOString().split('T')[0],
                     interval: 1,
-                    streak: 0
+                    streak: 0,
+                    categories
                 });
                 document.getElementById('topicName').value = '';
+                document.getElementById('topicCategories').value = '';
             }
             save();
             trackClarityEvent(action === 'add' ? 'topic_added' : 'topic_updated');
@@ -677,6 +770,7 @@
             isEditing = true;
             document.getElementById('editId').value = topic.id;
             document.getElementById('topicName').value = topic.name;
+            document.getElementById('topicCategories').value = normalizeCategoryList(topic.categories).join(', ');
             document.getElementById('topicWeight').value = topic.weight;
 
             // UI Updates
@@ -694,6 +788,7 @@
             isEditing = false;
             document.getElementById('editId').value = '';
             document.getElementById('topicName').value = '';
+            document.getElementById('topicCategories').value = '';
             document.getElementById('topicWeight').value = '45';
 
             // UI Reset
@@ -729,7 +824,7 @@
             let next = new Date();
             next.setDate(next.getDate() + Math.ceil(topic.interval));
             topic.nextReview = next.toISOString().split('T')[0];
-            recordActivity(topic.weight, difficulty);
+            recordActivity(topic.weight, difficulty, topic.categories);
             save();
             trackClarityEvent(`topic_completed_${difficulty}`);
             setClarityTag('last_topic_difficulty', difficulty);
@@ -771,7 +866,8 @@
                     completed: 0,
                     easy: 0,
                     medium: 0,
-                    hard: 0
+                    hard: 0,
+                    categories: {}
                 });
             }
 
@@ -792,9 +888,10 @@
             return streak;
         }
 
-        function recordActivity(minutes, difficulty) {
+        function recordActivity(minutes, difficulty, categories = []) {
             const today = getDateKey(0);
             const day = activityLog.find(entry => entry.date === today);
+            const categoryCounts = buildCategoryReviewCountMap(categories);
 
             if (day) {
                 day.minutes += Math.max(0, Number(minutes) || 0);
@@ -802,6 +899,7 @@
                 if (difficulty === 'easy' || difficulty === 'medium' || difficulty === 'hard') {
                     day[difficulty] += 1;
                 }
+                day.categories = mergeCategoryCounts(day.categories, categoryCounts);
                 return;
             }
 
@@ -811,7 +909,8 @@
                 completed: 1,
                 easy: difficulty === 'easy' ? 1 : 0,
                 medium: difficulty === 'medium' ? 1 : 0,
-                hard: difficulty === 'hard' ? 1 : 0
+                hard: difficulty === 'hard' ? 1 : 0,
+                categories: categoryCounts
             });
             activityLog = normalizeActivityLog(activityLog);
         }
@@ -889,6 +988,25 @@
                     </div>
                 `;
             }).join('');
+
+            const categoryTotals = Object.entries(getCategoryReviewTotals());
+            const desc = [...categoryTotals].sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]));
+            const asc = [...categoryTotals].sort((a, b) => a[1] - b[1] || a[0].localeCompare(b[0]));
+
+            const renderCategoryList = (items) => {
+                if (items.length === 0) {
+                    return `<div class="text-xs text-slate-400">No category reviews yet.</div>`;
+                }
+                return items.map(([category, count]) => `
+                    <div class="flex justify-between items-center text-xs">
+                        <span class="text-slate-600 font-medium">${escapeHtml(category)}</span>
+                        <span class="text-slate-500">${count} reviews</span>
+                    </div>
+                `).join('');
+            };
+
+            document.getElementById('categoryRankDesc').innerHTML = renderCategoryList(desc);
+            document.getElementById('categoryRankAsc').innerHTML = renderCategoryList(asc);
         }
 
         // --- Render Functions ---
@@ -914,6 +1032,7 @@
                     card.innerHTML = `
                         <div class="flex-1">
                             <h3 class="font-bold text-lg">${escapeHtml(topic.name)}</h3>
+                            ${renderCategoryBadges(topic.categories)}
                             <div class="flex gap-3 text-xs text-slate-400 mt-1 uppercase font-semibold">
                                 <span>⏱️ ${topic.weight} min</span>
                                 <span>🔥 Streak: ${topic.streak}</span>
@@ -943,7 +1062,10 @@
 
             libraryList.innerHTML = '';
 
-            const filtered = topics.filter(t => t.name.toLowerCase().includes(searchTerm));
+            const filtered = topics.filter(t =>
+                t.name.toLowerCase().includes(searchTerm) ||
+                normalizeCategoryList(t.categories).some(category => category.toLowerCase().includes(searchTerm))
+            );
 
             filtered.forEach(topic => {
                 const item = document.createElement('div');
@@ -951,6 +1073,7 @@
                 item.innerHTML = `
                     <div>
                         <div class="font-semibold text-slate-700">${escapeHtml(topic.name)}</div>
+                        ${renderCategoryBadges(topic.categories)}
                         <div class="text-xs text-slate-400">Next: ${topic.nextReview}</div>
                     </div>
                     <div class="flex gap-2">
