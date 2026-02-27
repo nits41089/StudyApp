@@ -186,17 +186,17 @@
             </div>
 
             <div class="mt-6">
-                <div class="text-xs text-slate-400 font-semibold uppercase">Category Reviews (All Time)</div>
+                <div class="flex items-center justify-between gap-3">
+                    <div class="text-xs text-slate-400 font-semibold uppercase">Category Reviews (All Time)</div>
+                    <button id="categorySortBtn" onclick="toggleCategorySort()"
+                        class="inline-flex items-center gap-2 px-2.5 py-1 rounded-lg border border-slate-200 text-slate-600 hover:bg-slate-50 text-[11px] font-semibold uppercase tracking-wide">
+                        <span id="categorySortIcon">v</span>
+                        <span id="categorySortLabel">High to Low</span>
+                    </button>
+                </div>
                 <div id="categoryRankSource" class="text-[11px] text-slate-400 mt-1">Based on completed reviews</div>
-                <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mt-3">
-                    <div class="rounded-xl border border-slate-100 bg-slate-50 p-3">
-                        <div class="text-[11px] uppercase tracking-wide text-slate-400 font-semibold mb-2">Descending</div>
-                        <div id="categoryRankDesc" class="space-y-2"></div>
-                    </div>
-                    <div class="rounded-xl border border-slate-100 bg-slate-50 p-3">
-                        <div class="text-[11px] uppercase tracking-wide text-slate-400 font-semibold mb-2">Ascending</div>
-                        <div id="categoryRankAsc" class="space-y-2"></div>
-                    </div>
+                <div class="rounded-xl border border-slate-100 bg-slate-50 p-3 mt-3">
+                    <div id="categoryRankList" class="space-y-2"></div>
                 </div>
             </div>
         </section>
@@ -228,6 +228,7 @@
         let syncInFlight = false;
         let isHydratingRemote = false;
         let cloudSupportsActivityLog = true;
+        let categorySortOrder = 'desc';
         let clarityTagCache = {};
 
         function loadLocalTopics() {
@@ -422,9 +423,17 @@
             setClarityTag('auth_state', currentUser ? 'signed_in' : 'signed_out');
             setClarityTag('cloud_sync_configured', (SUPABASE_URL && SUPABASE_ANON_KEY) ? 'yes' : 'no');
             setClarityTag('cloud_activity_sync', cloudSupportsActivityLog ? 'enabled' : 'schema_missing');
+            setClarityTag('category_sort_order', categorySortOrder);
             setClarityTag('topic_count', topics.length);
             setClarityTag('topic_count_bucket', topics.length === 0 ? '0' : topics.length <= 5 ? '1-5' : topics.length <= 20 ? '6-20' : '21+');
             setClarityTag('activity_days_logged', activityLog.length);
+        }
+
+        function toggleCategorySort() {
+            categorySortOrder = categorySortOrder === 'desc' ? 'asc' : 'desc';
+            renderAnalytics();
+            updateClarityContext();
+            trackClarityEvent('category_sort_toggled');
         }
 
         function save() {
@@ -1009,12 +1018,16 @@
             const topicTotals = Object.entries(getCategoryTopicTotals());
             const usingReviewTotals = reviewTotals.length > 0;
             const categoryTotals = usingReviewTotals ? reviewTotals : topicTotals;
-            const desc = [...categoryTotals].sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]));
-            const asc = [...categoryTotals].sort((a, b) => a[1] - b[1] || a[0].localeCompare(b[0]));
+            const sorted = [...categoryTotals].sort((a, b) => {
+                if (categorySortOrder === 'asc') return a[1] - b[1] || a[0].localeCompare(b[0]);
+                return b[1] - a[1] || a[0].localeCompare(b[0]);
+            });
             const counterLabel = usingReviewTotals ? 'reviews' : 'topics';
             document.getElementById('categoryRankSource').textContent = usingReviewTotals
                 ? 'Based on completed reviews (all time)'
                 : 'No review history yet, showing topic counts by category';
+            document.getElementById('categorySortLabel').textContent = categorySortOrder === 'desc' ? 'High to Low' : 'Low to High';
+            document.getElementById('categorySortIcon').textContent = categorySortOrder === 'desc' ? 'v' : '^';
 
             const renderCategoryList = (items) => {
                 if (items.length === 0) {
@@ -1028,8 +1041,7 @@
                 `).join('');
             };
 
-            document.getElementById('categoryRankDesc').innerHTML = renderCategoryList(desc);
-            document.getElementById('categoryRankAsc').innerHTML = renderCategoryList(asc);
+            document.getElementById('categoryRankList').innerHTML = renderCategoryList(sorted);
         }
 
         // --- Render Functions ---
