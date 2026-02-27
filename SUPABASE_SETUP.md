@@ -8,7 +8,7 @@ This app now supports cloud sync using Supabase Auth + a `user_study_data` table
 2. Create a new project
 3. Wait for the database to finish provisioning
 
-## 2. Create the table + RLS policies
+## 2. Create/update table + RLS policies
 
 Open `SQL Editor` in Supabase and run this SQL:
 
@@ -16,8 +16,19 @@ Open `SQL Editor` in Supabase and run this SQL:
 create table if not exists public.user_study_data (
   user_id uuid primary key references auth.users(id) on delete cascade,
   topics jsonb not null default '[]'::jsonb check (jsonb_typeof(topics) = 'array'),
+  activity_log jsonb not null default '[]'::jsonb check (jsonb_typeof(activity_log) = 'array'),
   updated_at timestamptz not null default now()
 );
+
+alter table public.user_study_data
+  add column if not exists activity_log jsonb not null default '[]'::jsonb;
+
+alter table public.user_study_data
+  drop constraint if exists user_study_data_activity_log_is_array;
+
+alter table public.user_study_data
+  add constraint user_study_data_activity_log_is_array
+  check (jsonb_typeof(activity_log) = 'array');
 
 alter table public.user_study_data enable row level security;
 
@@ -48,7 +59,8 @@ Why this version:
 - `to authenticated` follows Supabase's current recommendation to scope policies to logged-in users.
 - Explicit `is not null` avoids the common `auth.uid() = null` confusion for unauthenticated requests.
 - `(select auth.uid())` is the recommended pattern in Supabase docs for policy performance in many cases.
-- If the table already exists, rerunning this block mainly refreshes the policies; the `topics` check constraint is only applied on new table creation unless you run a separate `ALTER TABLE ... ADD CONSTRAINT` migration.
+- `activity_log` is included so daily activity stats sync across devices.
+- If the table already exists, rerunning this block adds `activity_log` and refreshes policies.
 
 ## 3. Configure Auth (email/password) for GitHub Pages
 
@@ -96,7 +108,7 @@ const SUPABASE_URL = 'https://YOUR-PROJECT.supabase.co';
 const SUPABASE_ANON_KEY = 'YOUR_PUBLISHABLE_OR_ANON_KEY';
 ```
 
-File reference: `index.html:147`
+File reference: `index.html`
 
 ## 6. Deploy / update GitHub Pages
 
@@ -111,5 +123,5 @@ git push
 ## 7. How sync works in the app
 
 - Local data is still cached in `localStorage` for offline use.
-- When signed in, the app syncs the full topic list to Supabase.
-- The same email account can be used on any device/browser to load your topics.
+- When signed in, the app syncs topics plus the daily activity log to Supabase.
+- The same email account can be used on any device/browser to load topics and activity stats.

@@ -79,7 +79,7 @@
             <div class="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
                 <div>
                     <div class="text-xs font-semibold uppercase tracking-wider text-slate-400 mb-1">Cloud Sync</div>
-                    <div class="text-sm text-slate-600">Sign in to sync your study topics across devices.</div>
+                    <div class="text-sm text-slate-600">Sign in to sync your topics and daily activity stats across devices.</div>
                     <div id="syncStatus"
                         class="inline-flex mt-2 text-xs font-semibold px-3 py-1 rounded-full bg-slate-100 text-slate-600">
                         Local only (not signed in)
@@ -146,6 +146,44 @@
             </div>
         </section>
 
+        <section class="bg-white p-6 rounded-2xl shadow-sm mb-12 border border-slate-100">
+            <div class="flex flex-col md:flex-row md:items-center md:justify-between gap-2 mb-4">
+                <h2 class="text-lg font-bold text-slate-700">Daily Activity Stats</h2>
+                <div id="analyticsUpdated" class="text-xs text-slate-400">Updated today</div>
+            </div>
+            <div class="grid grid-cols-2 md:grid-cols-4 gap-3 mb-6">
+                <div class="bg-slate-50 rounded-xl p-3 border border-slate-100">
+                    <div class="text-[11px] uppercase tracking-wide text-slate-400 font-semibold">Today</div>
+                    <div id="statTodayMinutes" class="text-2xl font-bold text-slate-800 mt-1">0m</div>
+                </div>
+                <div class="bg-slate-50 rounded-xl p-3 border border-slate-100">
+                    <div class="text-[11px] uppercase tracking-wide text-slate-400 font-semibold">Last 7 Days</div>
+                    <div id="statWeeklyMinutes" class="text-2xl font-bold text-slate-800 mt-1">0m</div>
+                </div>
+                <div class="bg-slate-50 rounded-xl p-3 border border-slate-100">
+                    <div class="text-[11px] uppercase tracking-wide text-slate-400 font-semibold">7-Day Sessions</div>
+                    <div id="statWeeklySessions" class="text-2xl font-bold text-slate-800 mt-1">0</div>
+                </div>
+                <div class="bg-slate-50 rounded-xl p-3 border border-slate-100">
+                    <div class="text-[11px] uppercase tracking-wide text-slate-400 font-semibold">Active Streak</div>
+                    <div id="statStreak" class="text-2xl font-bold text-slate-800 mt-1">0d</div>
+                </div>
+            </div>
+
+            <div>
+                <div class="flex justify-between items-center text-xs text-slate-400 font-semibold uppercase">
+                    <span>Minutes Completed (Last 14 Days)</span>
+                    <span id="chartPeakLabel">Peak: 0m</span>
+                </div>
+                <div id="activityChart" class="mt-3 h-48 flex items-end gap-2"></div>
+            </div>
+
+            <div class="mt-6">
+                <div class="text-xs text-slate-400 font-semibold uppercase">Difficulty Mix (Last 7 Days)</div>
+                <div id="difficultyBreakdown" class="mt-3 space-y-3"></div>
+            </div>
+        </section>
+
         <section class="border-t border-slate-200 pt-8">
             <div class="flex justify-between items-center mb-6">
                 <h2 class="text-lg font-bold text-slate-700">Topic Library</h2>
@@ -162,19 +200,30 @@
         const SUPABASE_URL = 'https://onqncpdvxjlkraqybmfz.supabase.co';
         const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im9ucW5jcGR2eGpsa3JhcXlibWZ6Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzE3NDYxODUsImV4cCI6MjA4NzMyMjE4NX0.xonXlN-kUPTV_9C269hFObWz4VWiq23wpj-TmschhDw';
         const STORAGE_KEY = 'study-topics';
+        const ACTIVITY_STORAGE_KEY = 'study-activity-log';
 
         let topics = loadLocalTopics();
+        let activityLog = loadLocalActivity();
         let isEditing = false;
         let supabase = null;
         let currentUser = null;
         let saveTimer = null;
         let syncInFlight = false;
         let isHydratingRemote = false;
+        let cloudSupportsActivityLog = true;
         let clarityTagCache = {};
 
         function loadLocalTopics() {
             try {
                 return normalizeTopics(JSON.parse(localStorage.getItem(STORAGE_KEY)) || []);
+            } catch {
+                return [];
+            }
+        }
+
+        function loadLocalActivity() {
+            try {
+                return normalizeActivityLog(JSON.parse(localStorage.getItem(ACTIVITY_STORAGE_KEY)) || []);
             } catch {
                 return [];
             }
@@ -193,6 +242,45 @@
                     streak: Number(item.streak) || 0
                 }))
                 .filter(item => item.name);
+        }
+
+        function normalizeActivityLog(raw) {
+            if (!Array.isArray(raw)) return [];
+
+            const byDate = new Map();
+
+            raw.forEach(item => {
+                if (!item || typeof item !== 'object') return;
+                const date = String(item.date || '').slice(0, 10);
+                if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) return;
+
+                const sanitized = {
+                    date,
+                    minutes: Math.max(0, Number(item.minutes) || 0),
+                    completed: Math.max(0, Number(item.completed) || 0),
+                    easy: Math.max(0, Number(item.easy) || 0),
+                    medium: Math.max(0, Number(item.medium) || 0),
+                    hard: Math.max(0, Number(item.hard) || 0)
+                };
+
+                const existing = byDate.get(date) || {
+                    date,
+                    minutes: 0,
+                    completed: 0,
+                    easy: 0,
+                    medium: 0,
+                    hard: 0
+                };
+
+                existing.minutes += sanitized.minutes;
+                existing.completed += sanitized.completed;
+                existing.easy += sanitized.easy;
+                existing.medium += sanitized.medium;
+                existing.hard += sanitized.hard;
+                byDate.set(date, existing);
+            });
+
+            return Array.from(byDate.values()).sort((a, b) => a.date.localeCompare(b.date));
         }
 
         function escapeHtml(value) {
@@ -228,16 +316,25 @@
         function updateClarityContext() {
             setClarityTag('auth_state', currentUser ? 'signed_in' : 'signed_out');
             setClarityTag('cloud_sync_configured', (SUPABASE_URL && SUPABASE_ANON_KEY) ? 'yes' : 'no');
+            setClarityTag('cloud_activity_sync', cloudSupportsActivityLog ? 'enabled' : 'schema_missing');
             setClarityTag('topic_count', topics.length);
             setClarityTag('topic_count_bucket', topics.length === 0 ? '0' : topics.length <= 5 ? '1-5' : topics.length <= 20 ? '6-20' : '21+');
+            setClarityTag('activity_days_logged', activityLog.length);
         }
 
         function save() {
             localStorage.setItem(STORAGE_KEY, JSON.stringify(topics));
+            localStorage.setItem(ACTIVITY_STORAGE_KEY, JSON.stringify(activityLog));
             render();
             renderLibrary();
+            renderAnalytics();
             updateClarityContext();
             queueRemoteSave();
+        }
+
+        function isMissingActivityColumnError(error) {
+            const message = String(error?.message || error?.details || '').toLowerCase();
+            return message.includes('activity_log') && (message.includes('column') || message.includes('schema cache'));
         }
 
         function setSyncStatus(text, tone = 'slate') {
@@ -299,6 +396,7 @@
                 if (error) throw error;
 
                 currentUser = data.session?.user || null;
+                cloudSupportsActivityLog = true;
                 updateAuthControls();
                 updateClarityContext();
 
@@ -315,6 +413,7 @@
                     updateClarityContext();
 
                     if (currentUser) {
+                        cloudSupportsActivityLog = true;
                         await loadRemoteTopics();
                     } else {
                         setSyncStatus('Local only (not signed in)', 'slate');
@@ -333,24 +432,67 @@
             try {
                 setSyncStatus('Loading from cloud...', 'indigo');
                 isHydratingRemote = true;
-                const { data, error } = await supabase
-                    .from('user_study_data')
-                    .select('topics, updated_at')
-                    .eq('user_id', currentUser.id)
-                    .maybeSingle();
+                let data = null;
+                let error = null;
+
+                if (cloudSupportsActivityLog) {
+                    const response = await supabase
+                        .from('user_study_data')
+                        .select('topics, activity_log, updated_at')
+                        .eq('user_id', currentUser.id)
+                        .maybeSingle();
+                    data = response.data;
+                    error = response.error;
+                } else {
+                    const response = await supabase
+                        .from('user_study_data')
+                        .select('topics, updated_at')
+                        .eq('user_id', currentUser.id)
+                        .maybeSingle();
+                    data = response.data;
+                    error = response.error;
+                }
+
+                if (error && isMissingActivityColumnError(error)) {
+                    cloudSupportsActivityLog = false;
+                    updateClarityContext();
+                    setSyncStatus('Cloud table missing activity_log column. Run migration to sync stats.', 'amber');
+                    trackClarityEvent('cloud_activity_column_missing');
+
+                    const fallbackResponse = await supabase
+                        .from('user_study_data')
+                        .select('topics, updated_at')
+                        .eq('user_id', currentUser.id)
+                        .maybeSingle();
+                    data = fallbackResponse.data;
+                    error = fallbackResponse.error;
+                }
 
                 if (error) throw error;
 
                 if (data && Array.isArray(data.topics)) {
                     topics = normalizeTopics(data.topics);
+                    if (cloudSupportsActivityLog) {
+                        activityLog = normalizeActivityLog(data.activity_log || []);
+                    }
                     localStorage.setItem(STORAGE_KEY, JSON.stringify(topics));
+                    localStorage.setItem(ACTIVITY_STORAGE_KEY, JSON.stringify(activityLog));
                     render();
                     renderLibrary();
+                    renderAnalytics();
                     updateClarityContext();
-                    setSyncStatus(`Synced (${new Date(data.updated_at || Date.now()).toLocaleString()})`, 'green');
+                    setSyncStatus(
+                        cloudSupportsActivityLog
+                            ? `Synced (${new Date(data.updated_at || Date.now()).toLocaleString()})`
+                            : `Synced topics only (${new Date(data.updated_at || Date.now()).toLocaleString()})`,
+                        cloudSupportsActivityLog ? 'green' : 'amber'
+                    );
                     trackClarityEvent('cloud_data_loaded');
                 } else {
-                    setSyncStatus('Signed in (no cloud data yet)', 'green');
+                    setSyncStatus(
+                        cloudSupportsActivityLog ? 'Signed in (no cloud data yet)' : 'Signed in (topics-only cloud schema)',
+                        cloudSupportsActivityLog ? 'green' : 'amber'
+                    );
                     trackClarityEvent('cloud_data_empty');
                     queueRemoteSave();
                 }
@@ -377,13 +519,37 @@
                     topics,
                     updated_at: new Date().toISOString()
                 };
+                if (cloudSupportsActivityLog) {
+                    payload.activity_log = activityLog;
+                }
 
-                const { error } = await supabase
+                let { error } = await supabase
                     .from('user_study_data')
                     .upsert(payload, { onConflict: 'user_id' });
 
+                if (error && cloudSupportsActivityLog && isMissingActivityColumnError(error)) {
+                    cloudSupportsActivityLog = false;
+                    updateClarityContext();
+                    trackClarityEvent('cloud_activity_column_missing');
+
+                    const fallbackPayload = {
+                        user_id: currentUser.id,
+                        topics,
+                        updated_at: new Date().toISOString()
+                    };
+                    const fallback = await supabase
+                        .from('user_study_data')
+                        .upsert(fallbackPayload, { onConflict: 'user_id' });
+                    error = fallback.error;
+                }
+
                 if (error) throw error;
-                setSyncStatus(`Synced (${new Date().toLocaleTimeString()})`, 'green');
+                setSyncStatus(
+                    cloudSupportsActivityLog
+                        ? `Synced (${new Date().toLocaleTimeString()})`
+                        : `Synced topics only (${new Date().toLocaleTimeString()})`,
+                    cloudSupportsActivityLog ? 'green' : 'amber'
+                );
                 trackClarityEvent(source === 'auto' ? 'cloud_sync_auto' : 'cloud_sync_manual');
             } catch (error) {
                 console.error(error);
@@ -549,6 +715,7 @@
 
         function completeTopic(id, difficulty) {
             const topic = topics.find(t => t.id === id);
+            if (!topic) return;
             const multipliers = { easy: 2.5, medium: 1.5, hard: 0 };
 
             if (difficulty === 'hard') {
@@ -562,9 +729,166 @@
             let next = new Date();
             next.setDate(next.getDate() + Math.ceil(topic.interval));
             topic.nextReview = next.toISOString().split('T')[0];
+            recordActivity(topic.weight, difficulty);
             save();
             trackClarityEvent(`topic_completed_${difficulty}`);
             setClarityTag('last_topic_difficulty', difficulty);
+        }
+
+        function toDateKey(date) {
+            return [
+                date.getFullYear(),
+                String(date.getMonth() + 1).padStart(2, '0'),
+                String(date.getDate()).padStart(2, '0')
+            ].join('-');
+        }
+
+        function getDateKey(daysAgo = 0) {
+            const date = new Date();
+            date.setHours(0, 0, 0, 0);
+            date.setDate(date.getDate() - daysAgo);
+            return toDateKey(date);
+        }
+
+        function getDateObject(dateString) {
+            const [year, month, day] = dateString.split('-').map(Number);
+            return new Date(year, month - 1, day);
+        }
+
+        function getActivityMap() {
+            return new Map(activityLog.map(entry => [entry.date, entry]));
+        }
+
+        function getRecentActivity(days) {
+            const activityMap = getActivityMap();
+            const values = [];
+
+            for (let i = days - 1; i >= 0; i -= 1) {
+                const date = getDateKey(i);
+                values.push(activityMap.get(date) || {
+                    date,
+                    minutes: 0,
+                    completed: 0,
+                    easy: 0,
+                    medium: 0,
+                    hard: 0
+                });
+            }
+
+            return values;
+        }
+
+        function getActiveStreak() {
+            const activityMap = getActivityMap();
+            let streak = 0;
+
+            for (let i = 0; i < 3650; i += 1) {
+                const date = getDateKey(i);
+                const day = activityMap.get(date);
+                if (!day || day.minutes <= 0) break;
+                streak += 1;
+            }
+
+            return streak;
+        }
+
+        function recordActivity(minutes, difficulty) {
+            const today = getDateKey(0);
+            const day = activityLog.find(entry => entry.date === today);
+
+            if (day) {
+                day.minutes += Math.max(0, Number(minutes) || 0);
+                day.completed += 1;
+                if (difficulty === 'easy' || difficulty === 'medium' || difficulty === 'hard') {
+                    day[difficulty] += 1;
+                }
+                return;
+            }
+
+            activityLog.push({
+                date: today,
+                minutes: Math.max(0, Number(minutes) || 0),
+                completed: 1,
+                easy: difficulty === 'easy' ? 1 : 0,
+                medium: difficulty === 'medium' ? 1 : 0,
+                hard: difficulty === 'hard' ? 1 : 0
+            });
+            activityLog = normalizeActivityLog(activityLog);
+        }
+
+        function renderAnalytics() {
+            const recent14 = getRecentActivity(14);
+            const recent7 = recent14.slice(-7);
+            const today = recent14[recent14.length - 1];
+
+            const weekMinutes = recent7.reduce((sum, day) => sum + day.minutes, 0);
+            const weekSessions = recent7.reduce((sum, day) => sum + day.completed, 0);
+            const streak = getActiveStreak();
+            const peakDay = recent14.reduce((peak, day) => day.minutes > peak.minutes ? day : peak, { date: '', minutes: 0 });
+
+            document.getElementById('statTodayMinutes').textContent = `${today.minutes}m`;
+            document.getElementById('statWeeklyMinutes').textContent = `${weekMinutes}m`;
+            document.getElementById('statWeeklySessions').textContent = String(weekSessions);
+            document.getElementById('statStreak').textContent = `${streak}d`;
+            document.getElementById('chartPeakLabel').textContent = peakDay.minutes > 0 ? `Peak: ${peakDay.minutes}m (${peakDay.date})` : 'Peak: 0m';
+
+            const now = new Date();
+            document.getElementById('analyticsUpdated').textContent = `Updated ${now.toLocaleDateString(undefined, {
+                month: 'short',
+                day: 'numeric'
+            })}`;
+
+            const maxMinutes = Math.max(...recent14.map(day => day.minutes), 1);
+            document.getElementById('activityChart').innerHTML = recent14.map(day => {
+                const label = getDateObject(day.date).toLocaleDateString(undefined, { weekday: 'short' }).slice(0, 2);
+                const height = day.minutes === 0 ? 8 : Math.max(14, Math.round((day.minutes / maxMinutes) * 150));
+                const color = day.minutes === 0
+                    ? 'bg-slate-200'
+                    : day.minutes >= maxMinutes * 0.75
+                        ? 'bg-indigo-500'
+                        : day.minutes >= maxMinutes * 0.4
+                            ? 'bg-indigo-400'
+                            : 'bg-indigo-300';
+                const highlightClass = day.date === getDateKey(0) ? 'ring-2 ring-indigo-200' : '';
+
+                return `
+                    <div class="flex-1 min-w-0 flex flex-col items-center justify-end gap-2" title="${day.date}: ${day.minutes} min, ${day.completed} sessions">
+                        <div class="w-full rounded-t-md ${color} ${highlightClass}" style="height:${height}px"></div>
+                        <div class="text-[10px] text-slate-400">${label}</div>
+                    </div>
+                `;
+            }).join('');
+
+            const totals = recent7.reduce((acc, day) => {
+                acc.easy += day.easy;
+                acc.medium += day.medium;
+                acc.hard += day.hard;
+                return acc;
+            }, { easy: 0, medium: 0, hard: 0 });
+
+            const totalDifficulty = totals.easy + totals.medium + totals.hard;
+            const breakdown = [
+                { key: 'easy', label: 'Mastered', color: 'bg-green-500' },
+                { key: 'medium', label: 'Okay', color: 'bg-amber-500' },
+                { key: 'hard', label: 'Struggled', color: 'bg-red-500' }
+            ];
+
+            document.getElementById('difficultyBreakdown').innerHTML = breakdown.map(item => {
+                const count = totals[item.key];
+                const pct = totalDifficulty ? Math.round((count / totalDifficulty) * 100) : 0;
+
+                return `
+                    <div>
+                        <div class="flex justify-between text-xs text-slate-500 mb-1">
+                            <span>${item.label}</span>
+                            <span>${count} (${pct}%)</span>
+                        </div>
+                        <div class="h-2 rounded-full bg-slate-100 overflow-hidden">
+                            <div class="${item.color} h-full" style="width:${pct}%"></div>
+                        </div>
+                    </div>
+                `;
+            }).join('');
         }
 
         // --- Render Functions ---
@@ -574,7 +898,7 @@
             const loadIndicator = document.getElementById('loadIndicator');
             const overflowNotice = document.getElementById('overflowNotice');
             const dailyCap = parseInt(document.getElementById('dailyCap').value);
-            const today = new Date().toISOString().split('T')[0];
+            const today = getDateKey(0);
 
             let currentLoad = 0;
             let hasOverflow = false;
@@ -640,7 +964,13 @@
 
         // Backup/Restore Logic
         function exportData() {
-            const dataStr = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify(topics));
+            const payload = {
+                version: 2,
+                exportedAt: new Date().toISOString(),
+                topics,
+                activityLog
+            };
+            const dataStr = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify(payload));
             const node = document.createElement('a');
             node.setAttribute("href", dataStr);
             node.setAttribute("download", "intellectflow_backup_" + new Date().toISOString().split('T')[0] + ".json");
@@ -658,10 +988,23 @@
                     const imported = JSON.parse(e.target.result);
                     if (Array.isArray(imported)) {
                         topics = normalizeTopics(imported);
+                        activityLog = [];
                         save();
                         trackClarityEvent('backup_import_success');
                         alert("Data successfully restored!");
+                        return;
                     }
+
+                    if (imported && typeof imported === 'object' && Array.isArray(imported.topics)) {
+                        topics = normalizeTopics(imported.topics);
+                        activityLog = normalizeActivityLog(imported.activityLog || []);
+                        save();
+                        trackClarityEvent('backup_import_success');
+                        alert("Data successfully restored!");
+                        return;
+                    }
+
+                    throw new Error('Unsupported backup format');
                 } catch (err) {
                     trackClarityEvent('backup_import_failed');
                     alert("Invalid file format.");
@@ -672,6 +1015,7 @@
 
         render();
         renderLibrary();
+        renderAnalytics();
         updateClarityContext();
         trackClarityEvent('app_loaded');
         updateAuthControls();
