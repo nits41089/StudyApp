@@ -226,18 +226,22 @@
         const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im9ucW5jcGR2eGpsa3JhcXlibWZ6Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzE3NDYxODUsImV4cCI6MjA4NzMyMjE4NX0.xonXlN-kUPTV_9C269hFObWz4VWiq23wpj-TmschhDw';
         const STORAGE_KEY = 'study-topics';
         const ACTIVITY_STORAGE_KEY = 'study-activity-log';
+        const SYNC_META_KEY = 'study-sync-meta';
 
         let topics = loadLocalTopics();
         let activityLog = loadLocalActivity();
+        let syncMeta = loadSyncMeta();
         let isEditing = false;
         let supabase = null;
         let currentUser = null;
         let saveTimer = null;
         let syncInFlight = false;
+        let pendingAutoSync = false;
         let isHydratingRemote = false;
         let cloudSupportsActivityLog = true;
         let categorySortOrder = 'desc';
         let clarityTagCache = {};
+        ensureSyncMetaInitialized();
 
         function loadLocalTopics() {
             try {
@@ -253,6 +257,45 @@
             } catch {
                 return [];
             }
+        }
+
+        function parseTimestamp(value) {
+            const ts = new Date(value || 0).getTime();
+            return Number.isFinite(ts) ? ts : 0;
+        }
+
+        function loadSyncMeta() {
+            try {
+                const parsed = JSON.parse(localStorage.getItem(SYNC_META_KEY) || '{}');
+                return {
+                    lastLocalChangeAt: typeof parsed.lastLocalChangeAt === 'string' ? parsed.lastLocalChangeAt : null,
+                    lastSuccessfulSyncAt: typeof parsed.lastSuccessfulSyncAt === 'string' ? parsed.lastSuccessfulSyncAt : null
+                };
+            } catch {
+                return { lastLocalChangeAt: null, lastSuccessfulSyncAt: null };
+            }
+        }
+
+        function persistSyncMeta() {
+            localStorage.setItem(SYNC_META_KEY, JSON.stringify(syncMeta));
+        }
+
+        function ensureSyncMetaInitialized() {
+            if (syncMeta.lastLocalChangeAt) return;
+            if (topics.length === 0 && activityLog.length === 0) return;
+            syncMeta.lastLocalChangeAt = new Date().toISOString();
+            persistSyncMeta();
+        }
+
+        function markLocalChanged(timestamp = new Date().toISOString()) {
+            syncMeta.lastLocalChangeAt = timestamp;
+            persistSyncMeta();
+        }
+
+        function markCloudSynced(timestamp = new Date().toISOString()) {
+            syncMeta.lastLocalChangeAt = timestamp;
+            syncMeta.lastSuccessfulSyncAt = timestamp;
+            persistSyncMeta();
         }
 
         function normalizeCategoryList(raw) {
@@ -455,6 +498,7 @@
         function save() {
             localStorage.setItem(STORAGE_KEY, JSON.stringify(topics));
             localStorage.setItem(ACTIVITY_STORAGE_KEY, JSON.stringify(activityLog));
+            markLocalChanged();
             render();
             renderLibrary();
             renderAnalytics();
@@ -498,7 +542,7 @@
         }
 
         function queueRemoteSave() {
-            if (!supabase || !currentUser || isHydratingRemote) return;
+            if (!supabase || !currentUser) return;
             clearTimeout(saveTimer);
             saveTimer = setTimeout(() => {
                 syncNow('auto');
@@ -601,20 +645,32 @@
                 if (error) throw error;
 
                 if (data && Array.isArray(data.topics)) {
+                    const remoteUpdatedAt = data.updated_at || new Date().toISOString();
+                    const remoteTs = parseTimestamp(remoteUpdatedAt);
+                    const localTs = parseTimestamp(syncMeta.lastLocalChangeAt);
+
+                    if (localTs > remoteTs + 1000) {
+                        setSyncStatus('Cloud is behind. Kept local changes and queued upload.', 'amber');
+                        trackClarityEvent('cloud_conflict_local_wins');
+                        queueRemoteSave();
+                        return;
+                    }
+
                     topics = normalizeTopics(data.topics);
                     if (cloudSupportsActivityLog) {
                         activityLog = normalizeActivityLog(data.activity_log || []);
                     }
                     localStorage.setItem(STORAGE_KEY, JSON.stringify(topics));
                     localStorage.setItem(ACTIVITY_STORAGE_KEY, JSON.stringify(activityLog));
+                    markCloudSynced(remoteUpdatedAt);
                     render();
                     renderLibrary();
                     renderAnalytics();
                     updateClarityContext();
                     setSyncStatus(
                         cloudSupportsActivityLog
-                            ? `Synced (${new Date(data.updated_at || Date.now()).toLocaleString()})`
-                            : `Synced topics only (${new Date(data.updated_at || Date.now()).toLocaleString()})`,
+                            ? `Synced (${new Date(remoteUpdatedAt).toLocaleString()})`
+                            : `Synced topics only (${new Date(remoteUpdatedAt).toLocaleString()})`,
                         cloudSupportsActivityLog ? 'green' : 'amber'
                     );
                     trackClarityEvent('cloud_data_loaded');
@@ -637,7 +693,11 @@
         }
 
         async function syncNow(source = 'manual') {
-            if (!supabase || !currentUser || syncInFlight) return;
+            if (!supabase || !currentUser) return;
+            if (syncInFlight) {
+                if (source === 'auto') pendingAutoSync = true;
+                return;
+            }
 
             try {
                 syncInFlight = true;
@@ -674,6 +734,7 @@
                 }
 
                 if (error) throw error;
+                markCloudSynced(payload.updated_at);
                 setSyncStatus(
                     cloudSupportsActivityLog
                         ? `Synced (${new Date().toLocaleTimeString()})`
@@ -688,6 +749,10 @@
             } finally {
                 syncInFlight = false;
                 updateAuthControls();
+                if (pendingAutoSync) {
+                    pendingAutoSync = false;
+                    syncNow('auto');
+                }
             }
         }
 
