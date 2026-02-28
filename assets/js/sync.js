@@ -1,3 +1,22 @@
+const CLOUD_REQUEST_TIMEOUT_MS = 15000;
+let loadRequestSequence = 0;
+
+async function withCloudTimeout(promise, operation, timeoutMs = CLOUD_REQUEST_TIMEOUT_MS) {
+    let timeoutId;
+    try {
+        return await Promise.race([
+            promise,
+            new Promise((_, reject) => {
+                timeoutId = setTimeout(() => {
+                    reject(new Error(`${operation} timed out after ${timeoutMs}ms`));
+                }, timeoutMs);
+            })
+        ]);
+    } finally {
+        clearTimeout(timeoutId);
+    }
+}
+
 async function initCloudSync() {
     const hint = document.getElementById('cloudConfigHint');
 
@@ -15,7 +34,10 @@ async function initCloudSync() {
         const module = await import('https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/+esm');
         supabase = module.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
-        const { data, error } = await supabase.auth.getSession();
+        const { data, error } = await withCloudTimeout(
+            supabase.auth.getSession(),
+            'Auth session restore'
+        );
         if (error) throw error;
 
         currentUser = data.session?.user || null;
@@ -51,6 +73,7 @@ async function initCloudSync() {
 
 async function loadRemoteTopics() {
     if (!supabase || !currentUser) return;
+    const requestId = ++loadRequestSequence;
 
     try {
         setSyncStatus('Loading from cloud...', 'indigo');
@@ -59,19 +82,25 @@ async function loadRemoteTopics() {
         let error = null;
 
         if (cloudSupportsActivityLog) {
-            const response = await supabase
-                .from('user_study_data')
-                .select('topics, activity_log, updated_at')
-                .eq('user_id', currentUser.id)
-                .maybeSingle();
+            const response = await withCloudTimeout(
+                supabase
+                    .from('user_study_data')
+                    .select('topics, activity_log, updated_at')
+                    .eq('user_id', currentUser.id)
+                    .maybeSingle(),
+                'Cloud load'
+            );
             data = response.data;
             error = response.error;
         } else {
-            const response = await supabase
-                .from('user_study_data')
-                .select('topics, updated_at')
-                .eq('user_id', currentUser.id)
-                .maybeSingle();
+            const response = await withCloudTimeout(
+                supabase
+                    .from('user_study_data')
+                    .select('topics, updated_at')
+                    .eq('user_id', currentUser.id)
+                    .maybeSingle(),
+                'Cloud load'
+            );
             data = response.data;
             error = response.error;
         }
@@ -82,15 +111,19 @@ async function loadRemoteTopics() {
             setSyncStatus('Cloud table missing activity_log column. Run migration to sync stats.', 'amber');
             trackClarityEvent('cloud_activity_column_missing');
 
-            const fallbackResponse = await supabase
-                .from('user_study_data')
-                .select('topics, updated_at')
-                .eq('user_id', currentUser.id)
-                .maybeSingle();
+            const fallbackResponse = await withCloudTimeout(
+                supabase
+                    .from('user_study_data')
+                    .select('topics, updated_at')
+                    .eq('user_id', currentUser.id)
+                    .maybeSingle(),
+                'Cloud load fallback'
+            );
             data = fallbackResponse.data;
             error = fallbackResponse.error;
         }
 
+        if (requestId !== loadRequestSequence) return;
         if (error) throw error;
 
         if (data && Array.isArray(data.topics)) {
@@ -132,12 +165,20 @@ async function loadRemoteTopics() {
             queueRemoteSave();
         }
     } catch (error) {
+        if (requestId !== loadRequestSequence) return;
         console.error(error);
-        setSyncStatus('Failed to load cloud data', 'red');
-        trackClarityEvent('cloud_data_load_failed');
+        if (String(error?.message || '').toLowerCase().includes('timed out')) {
+            setSyncStatus('Cloud load timed out. Local data kept; retry with Sync Now.', 'amber');
+            trackClarityEvent('cloud_data_load_timeout');
+        } else {
+            setSyncStatus('Failed to load cloud data', 'red');
+            trackClarityEvent('cloud_data_load_failed');
+        }
     } finally {
-        isHydratingRemote = false;
-        updateAuthControls();
+        if (requestId === loadRequestSequence) {
+            isHydratingRemote = false;
+            updateAuthControls();
+        }
     }
 }
 
@@ -162,9 +203,12 @@ async function syncNow(source = 'manual') {
             payload.activity_log = activityLog;
         }
 
-        let { error } = await supabase
-            .from('user_study_data')
-            .upsert(payload, { onConflict: 'user_id' });
+        let { error } = await withCloudTimeout(
+            supabase
+                .from('user_study_data')
+                .upsert(payload, { onConflict: 'user_id' }),
+            'Cloud sync'
+        );
 
         if (error && cloudSupportsActivityLog && isMissingActivityColumnError(error)) {
             cloudSupportsActivityLog = false;
@@ -176,9 +220,12 @@ async function syncNow(source = 'manual') {
                 topics,
                 updated_at: new Date().toISOString()
             };
-            const fallback = await supabase
-                .from('user_study_data')
-                .upsert(fallbackPayload, { onConflict: 'user_id' });
+            const fallback = await withCloudTimeout(
+                supabase
+                    .from('user_study_data')
+                    .upsert(fallbackPayload, { onConflict: 'user_id' }),
+                'Cloud sync fallback'
+            );
             error = fallback.error;
         }
 
@@ -193,8 +240,13 @@ async function syncNow(source = 'manual') {
         trackClarityEvent(source === 'auto' ? 'cloud_sync_auto' : 'cloud_sync_manual');
     } catch (error) {
         console.error(error);
-        setSyncStatus('Cloud sync failed', 'red');
-        trackClarityEvent(source === 'auto' ? 'cloud_sync_auto_failed' : 'cloud_sync_manual_failed');
+        if (String(error?.message || '').toLowerCase().includes('timed out')) {
+            setSyncStatus('Cloud sync timed out. Local changes are safe and pending retry.', 'amber');
+            trackClarityEvent(source === 'auto' ? 'cloud_sync_auto_timeout' : 'cloud_sync_manual_timeout');
+        } else {
+            setSyncStatus('Cloud sync failed', 'red');
+            trackClarityEvent(source === 'auto' ? 'cloud_sync_auto_failed' : 'cloud_sync_manual_failed');
+        }
     } finally {
         syncInFlight = false;
         updateAuthControls();
@@ -279,4 +331,3 @@ async function signOut() {
         trackClarityEvent('auth_signout_failed');
     }
 }
-
