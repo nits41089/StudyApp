@@ -190,13 +190,21 @@
                     <div class="text-xs text-slate-400 font-semibold uppercase">Category Reviews (All Time)</div>
                     <button id="categorySortBtn" onclick="toggleCategorySort()"
                         class="inline-flex items-center gap-2 px-2.5 py-1 rounded-lg border border-slate-200 text-slate-600 hover:bg-slate-50 text-[11px] font-semibold uppercase tracking-wide">
-                        <span id="categorySortIcon">v</span>
+                        <span id="categorySortIcon">↓</span>
                         <span id="categorySortLabel">High to Low</span>
                     </button>
                 </div>
-                <div id="categoryRankSource" class="text-[11px] text-slate-400 mt-1">Based on completed reviews</div>
+                <div id="categoryRankSource" class="text-[11px] text-slate-400 mt-1">Based on topic review totals since start</div>
                 <div class="rounded-xl border border-slate-100 bg-slate-50 p-3 mt-3">
                     <div id="categoryRankList" class="space-y-2"></div>
+                </div>
+            </div>
+
+            <div class="mt-6">
+                <div class="text-xs text-slate-400 font-semibold uppercase">Category Topic Coverage</div>
+                <div class="text-[11px] text-slate-400 mt-1">Number of topics in each category</div>
+                <div class="rounded-xl border border-slate-100 bg-slate-50 p-3 mt-3">
+                    <div id="categoryTopicCountChart" class="space-y-3"></div>
                 </div>
             </div>
         </section>
@@ -302,18 +310,25 @@
         }
 
         function getCategoryReviewTotals() {
-            return activityLog.reduce((totals, day) => mergeCategoryCounts(totals, day.categories || {}), {});
+            return topics.reduce((totals, topic) => {
+                const categories = normalizeCategoryList(topic.categories);
+                const reviewCount = Math.max(0, Number(topic.reviewCount) || 0);
+                const buckets = categories.length > 0 ? categories : ['Uncategorized'];
+
+                buckets.forEach(category => {
+                    if (!(category in totals)) totals[category] = 0;
+                    totals[category] += reviewCount;
+                });
+                return totals;
+            }, {});
         }
 
         function getCategoryTopicTotals() {
             return topics.reduce((totals, topic) => {
                 const categories = normalizeCategoryList(topic.categories);
-                if (categories.length === 0) {
-                    totals.Uncategorized = (totals.Uncategorized || 0) + 1;
-                    return totals;
-                }
+                const buckets = categories.length > 0 ? categories : ['Uncategorized'];
 
-                categories.forEach(category => {
+                buckets.forEach(category => {
                     totals[category] = (totals[category] || 0) + 1;
                 });
                 return totals;
@@ -342,6 +357,7 @@
                     nextReview: String(item.nextReview || new Date().toISOString().split('T')[0]),
                     interval: Number(item.interval) || 1,
                     streak: Number(item.streak) || 0,
+                    reviewCount: Math.max(0, Number(item.reviewCount) || 0),
                     categories: normalizeCategoryList(item.categories || item.category || [])
                 }))
                 .filter(item => item.name);
@@ -777,6 +793,7 @@
                     nextReview: new Date().toISOString().split('T')[0],
                     interval: 1,
                     streak: 0,
+                    reviewCount: 0,
                     categories
                 });
                 document.getElementById('topicName').value = '';
@@ -849,6 +866,7 @@
             let next = new Date();
             next.setDate(next.getDate() + Math.ceil(topic.interval));
             topic.nextReview = next.toISOString().split('T')[0];
+            topic.reviewCount = (Number(topic.reviewCount) || 0) + 1;
             recordActivity(topic.weight, difficulty, topic.categories);
             save();
             trackClarityEvent(`topic_completed_${difficulty}`);
@@ -1014,20 +1032,15 @@
                 `;
             }).join('');
 
-            const reviewTotals = Object.entries(getCategoryReviewTotals());
-            const topicTotals = Object.entries(getCategoryTopicTotals());
-            const usingReviewTotals = reviewTotals.length > 0;
-            const categoryTotals = usingReviewTotals ? reviewTotals : topicTotals;
+            const categoryTotals = Object.entries(getCategoryReviewTotals());
             const sorted = [...categoryTotals].sort((a, b) => {
                 if (categorySortOrder === 'asc') return a[1] - b[1] || a[0].localeCompare(b[0]);
                 return b[1] - a[1] || a[0].localeCompare(b[0]);
             });
-            const counterLabel = usingReviewTotals ? 'reviews' : 'topics';
-            document.getElementById('categoryRankSource').textContent = usingReviewTotals
-                ? 'Based on completed reviews (all time)'
-                : 'No review history yet, showing topic counts by category';
+            document.getElementById('categoryRankSource').textContent =
+                'Based on topic review totals since start (resets if topic is deleted)';
             document.getElementById('categorySortLabel').textContent = categorySortOrder === 'desc' ? 'High to Low' : 'Low to High';
-            document.getElementById('categorySortIcon').textContent = categorySortOrder === 'desc' ? 'v' : '^';
+            document.getElementById('categorySortIcon').textContent = categorySortOrder === 'desc' ? '↓' : '↑';
 
             const renderCategoryList = (items) => {
                 if (items.length === 0) {
@@ -1036,12 +1049,32 @@
                 return items.map(([category, count]) => `
                     <div class="flex justify-between items-center text-xs">
                         <span class="text-slate-600 font-medium">${escapeHtml(category)}</span>
-                        <span class="text-slate-500">${count} ${counterLabel}</span>
+                        <span class="text-slate-500">${count} reviews</span>
                     </div>
                 `).join('');
             };
 
             document.getElementById('categoryRankList').innerHTML = renderCategoryList(sorted);
+
+            const categoryTopicTotals = Object.entries(getCategoryTopicTotals())
+                .sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]));
+            const maxTopicCount = Math.max(...categoryTopicTotals.map(([, count]) => count), 1);
+            document.getElementById('categoryTopicCountChart').innerHTML = categoryTopicTotals.length === 0
+                ? `<div class="text-xs text-slate-400">No categories yet.</div>`
+                : categoryTopicTotals.map(([category, count]) => {
+                    const width = Math.max(8, Math.round((count / maxTopicCount) * 100));
+                    return `
+                        <div>
+                            <div class="flex justify-between items-center text-xs mb-1">
+                                <span class="text-slate-600 font-medium">${escapeHtml(category)}</span>
+                                <span class="text-slate-500">${count} topics</span>
+                            </div>
+                            <div class="h-2 rounded-full bg-slate-200 overflow-hidden">
+                                <div class="h-full bg-indigo-500" style="width:${width}%"></div>
+                            </div>
+                        </div>
+                    `;
+                }).join('');
         }
 
         // --- Render Functions ---
