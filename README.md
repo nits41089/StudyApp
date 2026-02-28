@@ -17,7 +17,7 @@ Live app: `https://nits41089.github.io/StudyApp/`
 
 ## Tech stack
 
-- `HTML` (single-page app)
+- `HTML` (single-page app shell)
 - `Tailwind CSS` (CDN)
 - `Vanilla JavaScript`
 - `Supabase` (Auth + Postgres for cloud sync)
@@ -26,12 +26,25 @@ Live app: `https://nits41089.github.io/StudyApp/`
 
 ## Project files
 
-- `index.html` - main app (UI + logic + Supabase sync + Clarity)
+- `index.html` - app layout/markup + script/style includes
+- `assets/css/main.css` - app-specific styles
+- `assets/js/core.js` - app state, normalization, local persistence, shared helpers
+- `assets/js/sync.js` - Supabase auth + cloud sync logic
+- `assets/js/features.js` - topic actions, analytics rendering, backup/restore, bootstrap
 - `SUPABASE_SETUP.md` - detailed Supabase backend setup
 - `favicon.svg`, `apple-touch-icon.png`, `icon-192.png`, `icon-512.png` - icons
 - `site.webmanifest` - mobile install metadata
 
 ## Use the app (end user)
+
+### App routes
+
+The app uses client-side hash routes (works with GitHub Pages static hosting):
+
+- `#/dashboard` - today agenda
+- `#/analytics` - activity charts + category insights
+- `#/topics` - add/edit topics + library
+- `#/sync` - cloud auth and sync controls
 
 ### Local-only mode (no sign-in)
 
@@ -84,9 +97,9 @@ Detailed guide: `SUPABASE_SETUP.md`
 3. Enable Email/Auth provider
 4. Configure `Authentication` -> `URL Configuration` for your GitHub Pages URL
 5. Copy `Project URL` + `Publishable key` (or legacy `anon` key)
-6. Paste them into `index.html`
+6. Paste them into `assets/js/core.js`
 
-Look for these constants in `index.html`:
+Look for these constants in `assets/js/core.js`:
 
 ```js
 const SUPABASE_URL = '...';
@@ -97,7 +110,7 @@ const SUPABASE_ANON_KEY = '...';
 
 - The Supabase publishable/anon key in frontend code is expected and can be public.
 - Security depends on correct RLS policies.
-- Never put a `service_role` key in `index.html`.
+- Never put a `service_role` key in frontend code.
 
 ## Configure analytics (Microsoft Clarity)
 

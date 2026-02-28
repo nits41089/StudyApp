@@ -101,21 +101,21 @@ Notes:
 
 ## 5. Paste config into the app
 
-Edit `index.html` and set these values near the top of the `<script>`:
+Edit `assets/js/core.js` and set these values near the top of the file:
 
 ```js
 const SUPABASE_URL = 'https://YOUR-PROJECT.supabase.co';
 const SUPABASE_ANON_KEY = 'YOUR_PUBLISHABLE_OR_ANON_KEY';
 ```
 
-File reference: `index.html`
+File reference: `assets/js/core.js`
 
 ## 6. Deploy / update GitHub Pages
 
 Commit and push your changes:
 
 ```bash
-git add index.html SUPABASE_SETUP.md
+git add assets/js/core.js SUPABASE_SETUP.md
 git commit -m "Add Supabase cloud sync"
 git push
 ```
