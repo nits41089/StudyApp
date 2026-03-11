@@ -32,6 +32,8 @@ function handleTopicSubmit() {
             dueCount: 0,
             recentOutcomes: [],
             recentReviewHistory: [],
+            inLearning: true,
+            learningStep: 0,
             categories
         });
         document.getElementById('topicName').value = '';
@@ -99,9 +101,21 @@ function completeTopic(id, difficulty) {
     const maxSingleJumpDays = 30;
     const minEase = 1.3;
     const maxEase = 2.8;
+    const learningIntervals = [1, 2, 4];
+    const maxLearningStep = learningIntervals.length;
     const previousInterval = clamp(Number(topic.interval) || minInterval, minInterval, maxInterval);
     let ease = clamp(Number(topic.ease) || 2.3, minEase, maxEase);
     let nextInterval = minInterval;
+    const rawLearningStep = Number(topic.learningStep);
+    let learningStep = Number.isFinite(rawLearningStep)
+        ? Math.min(maxLearningStep, Math.max(0, Math.floor(rawLearningStep)))
+        : 0;
+    let inLearning = typeof topic.inLearning === 'boolean'
+        ? topic.inLearning
+        : (Number(topic.reviewCount) || 0) === 0;
+    if (inLearning && learningStep >= maxLearningStep) {
+        learningStep = maxLearningStep - 1;
+    }
     const today = getDateKey(0);
     const dueDate = getDateObject(String(topic.nextReview || today));
     const todayDate = getDateObject(today);
@@ -147,26 +161,38 @@ function completeTopic(id, difficulty) {
         nextInterval = minInterval;
         topic.streak = 0;
         topic.lapses = Math.max(0, Number(topic.lapses) || 0) + 1;
+        inLearning = true;
+        learningStep = 0;
     } else {
         if (difficulty === 'easy') {
             ease = clamp(ease + 0.1, minEase, maxEase);
         } else if (difficulty === 'medium') {
             ease = clamp(ease - 0.05, minEase, maxEase);
         }
-
-        let timingFactor = 1;
-        if (daysFromDue > 0) {
-            const overdueRatio = Math.min(1, daysFromDue / Math.max(1, previousInterval));
-            timingFactor += overdueRatio * 0.2;
-        } else if (daysFromDue < 0) {
-            const earlyRatio = Math.min(1, Math.abs(daysFromDue) / Math.max(1, previousInterval));
-            timingFactor -= earlyRatio * 0.15;
+        if (inLearning) {
+            const stepIndex = Math.min(learningStep, learningIntervals.length - 1);
+            nextInterval = learningIntervals[stepIndex];
+            if (stepIndex >= learningIntervals.length - 1) {
+                inLearning = false;
+                learningStep = maxLearningStep;
+            } else {
+                learningStep = stepIndex + 1;
+            }
+        } else {
+            let timingFactor = 1;
+            if (daysFromDue > 0) {
+                const overdueRatio = Math.min(1, daysFromDue / Math.max(1, previousInterval));
+                timingFactor += overdueRatio * 0.2;
+            } else if (daysFromDue < 0) {
+                const earlyRatio = Math.min(1, Math.abs(daysFromDue) / Math.max(1, previousInterval));
+                timingFactor -= earlyRatio * 0.15;
+            }
+            timingFactor = clamp(timingFactor, 0.85, 1.2);
+            const easeFactor = clamp(ease / 2.3, 0.75, 1.25);
+            const multiplied = previousInterval * multipliers[difficulty] * timingFactor * easeFactor * stabilityFactor;
+            const jumpCapped = Math.min(multiplied, previousInterval + maxSingleJumpDays);
+            nextInterval = clamp(jumpCapped, minInterval, maxInterval);
         }
-        timingFactor = clamp(timingFactor, 0.85, 1.2);
-        const easeFactor = clamp(ease / 2.3, 0.75, 1.25);
-        const multiplied = previousInterval * multipliers[difficulty] * timingFactor * easeFactor * stabilityFactor;
-        const jumpCapped = Math.min(multiplied, previousInterval + maxSingleJumpDays);
-        nextInterval = clamp(jumpCapped, minInterval, maxInterval);
         topic.streak += 1;
     }
 
@@ -175,6 +201,8 @@ function completeTopic(id, difficulty) {
     }
 
     topic.ease = ease;
+    topic.inLearning = inLearning;
+    topic.learningStep = learningStep;
     topic.interval = nextInterval;
     let next = new Date();
     next.setDate(next.getDate() + Math.ceil(topic.interval));
@@ -403,6 +431,7 @@ function render() {
     const today = getDateKey(0);
     const todayDate = getDateObject(today);
     const msPerDay = 24 * 60 * 60 * 1000;
+    const learningPhaseCount = 3;
 
     let currentLoad = 0;
     let hasOverflow = false;
@@ -435,17 +464,23 @@ function render() {
         const lapses = Math.max(0, Number(topic.lapses) || 0);
         const parsedEase = Number(topic.ease);
         const ease = Number.isFinite(parsedEase) ? Math.min(2.8, Math.max(1.3, parsedEase)) : 2.3;
+        const inLearning = topic.inLearning === true;
+        const learningStep = Math.max(0, Number(topic.learningStep) || 0);
         const difficultySample = getReviewDifficultySample(topic);
         const hardCount = difficultySample.filter(value => value === 'hard').length;
         const hardRate = difficultySample.length > 0 ? hardCount / difficultySample.length : 0;
 
         const score =
+            (inLearning ? 6 : 0) +
             (overdueDays * 5) +
             (lapses * 3) +
             ((2.8 - ease) * 2) +
             (hardRate * 4);
 
         const reasonParts = [];
+        if (inLearning) {
+            reasonParts.push(`Learning ${Math.min(learningPhaseCount, learningStep + 1)}/${learningPhaseCount}`);
+        }
         if (overdueDays > 0) reasonParts.push(`Overdue ${overdueDays}d`);
         if (lapses > 0) reasonParts.push(`${lapses} lapse${lapses === 1 ? '' : 's'}`);
         if (difficultySample.length >= 3 && hardRate >= 0.34) {

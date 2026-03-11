@@ -207,6 +207,14 @@ function normalizeTopics(raw) {
             const normalizedEase = Number.isFinite(parsedEase)
                 ? Math.min(2.8, Math.max(1.3, parsedEase))
                 : 2.3;
+            const maxLearningStep = 3;
+            const parsedLearningStep = Number(item.learningStep);
+            const normalizedLearningStep = Number.isFinite(parsedLearningStep)
+                ? Math.min(maxLearningStep, Math.max(0, Math.floor(parsedLearningStep)))
+                : 0;
+            const normalizedInLearning = typeof item.inLearning === 'boolean'
+                ? item.inLearning
+                : (Math.max(0, Number(item.reviewCount) || 0) === 0);
 
             return {
                 id: Number(item.id) || Date.now() + Math.floor(Math.random() * 1000),
@@ -222,6 +230,8 @@ function normalizeTopics(raw) {
                 dueCount: Math.max(0, Number(item.dueCount) || 0),
                 recentOutcomes: normalizedRecentOutcomes,
                 recentReviewHistory: normalizedReviewHistory,
+                inLearning: normalizedInLearning && normalizedLearningStep < maxLearningStep,
+                learningStep: normalizedLearningStep,
                 categories: normalizeCategoryList(item.categories || item.category || [])
             };
         })
