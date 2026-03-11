@@ -99,21 +99,35 @@ function completeTopic(id, difficulty) {
     const previousInterval = clamp(Number(topic.interval) || minInterval, minInterval, maxInterval);
     let nextInterval = minInterval;
     const today = getDateKey(0);
+    const dueDate = getDateObject(String(topic.nextReview || today));
+    const todayDate = getDateObject(today);
+    const hasValidDueDate = !Number.isNaN(dueDate.getTime()) && !Number.isNaN(todayDate.getTime());
+    const msPerDay = 24 * 60 * 60 * 1000;
+    const daysFromDue = hasValidDueDate
+        ? Math.floor((todayDate.getTime() - dueDate.getTime()) / msPerDay)
+        : 0;
 
     if (difficulty === 'hard') {
         nextInterval = minInterval;
         topic.streak = 0;
         topic.lapses = Math.max(0, Number(topic.lapses) || 0) + 1;
     } else {
-        const multiplied = previousInterval * multipliers[difficulty];
+        let timingFactor = 1;
+        if (daysFromDue > 0) {
+            const overdueRatio = Math.min(1, daysFromDue / Math.max(1, previousInterval));
+            timingFactor += overdueRatio * 0.2;
+        } else if (daysFromDue < 0) {
+            const earlyRatio = Math.min(1, Math.abs(daysFromDue) / Math.max(1, previousInterval));
+            timingFactor -= earlyRatio * 0.15;
+        }
+        timingFactor = clamp(timingFactor, 0.85, 1.2);
+        const multiplied = previousInterval * multipliers[difficulty] * timingFactor;
         const jumpCapped = Math.min(multiplied, previousInterval + maxSingleJumpDays);
         nextInterval = clamp(jumpCapped, minInterval, maxInterval);
         topic.streak += 1;
     }
 
-    const dueDate = getDateObject(String(topic.nextReview || today));
-    const todayDate = getDateObject(today);
-    if (!Number.isNaN(dueDate.getTime()) && dueDate < todayDate) {
+    if (hasValidDueDate && daysFromDue > 0) {
         topic.dueCount = Math.max(0, Number(topic.dueCount) || 0) + 1;
     }
 
