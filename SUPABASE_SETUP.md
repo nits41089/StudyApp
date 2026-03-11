@@ -101,7 +101,7 @@ Notes:
 
 ## 5. Paste config into the app
 
-Edit `assets/js/core.js` and set these values near the top of the file:
+Edit `assets/js/core.js` and set these values at the top of the file:
 
 ```js
 const SUPABASE_URL = 'https://YOUR-PROJECT.supabase.co';
@@ -125,3 +125,5 @@ git push
 - Local data is still cached in `localStorage` for offline use.
 - When signed in, the app syncs topics plus the daily activity log to Supabase.
 - The same email account can be used on any device/browser to load topics and activity stats.
+- Missing `activity_log` column is handled with a topics-only fallback, but you should still run the SQL above so analytics data syncs fully.
+- Spaced-repetition fields (like `ease`, `lapses`, `recentOutcomes`) are stored inside each topic JSON object, so no extra table columns are required.
