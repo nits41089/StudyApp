@@ -96,7 +96,10 @@ function completeTopic(id, difficulty) {
     const minInterval = 1;
     const maxInterval = 120;
     const maxSingleJumpDays = 30;
+    const minEase = 1.3;
+    const maxEase = 2.8;
     const previousInterval = clamp(Number(topic.interval) || minInterval, minInterval, maxInterval);
+    let ease = clamp(Number(topic.ease) || 2.3, minEase, maxEase);
     let nextInterval = minInterval;
     const today = getDateKey(0);
     const dueDate = getDateObject(String(topic.nextReview || today));
@@ -108,10 +111,17 @@ function completeTopic(id, difficulty) {
         : 0;
 
     if (difficulty === 'hard') {
+        ease = clamp(ease - 0.2, minEase, maxEase);
         nextInterval = minInterval;
         topic.streak = 0;
         topic.lapses = Math.max(0, Number(topic.lapses) || 0) + 1;
     } else {
+        if (difficulty === 'easy') {
+            ease = clamp(ease + 0.1, minEase, maxEase);
+        } else if (difficulty === 'medium') {
+            ease = clamp(ease - 0.05, minEase, maxEase);
+        }
+
         let timingFactor = 1;
         if (daysFromDue > 0) {
             const overdueRatio = Math.min(1, daysFromDue / Math.max(1, previousInterval));
@@ -121,7 +131,8 @@ function completeTopic(id, difficulty) {
             timingFactor -= earlyRatio * 0.15;
         }
         timingFactor = clamp(timingFactor, 0.85, 1.2);
-        const multiplied = previousInterval * multipliers[difficulty] * timingFactor;
+        const easeFactor = clamp(ease / 2.3, 0.75, 1.25);
+        const multiplied = previousInterval * multipliers[difficulty] * timingFactor * easeFactor;
         const jumpCapped = Math.min(multiplied, previousInterval + maxSingleJumpDays);
         nextInterval = clamp(jumpCapped, minInterval, maxInterval);
         topic.streak += 1;
@@ -131,6 +142,7 @@ function completeTopic(id, difficulty) {
         topic.dueCount = Math.max(0, Number(topic.dueCount) || 0) + 1;
     }
 
+    topic.ease = ease;
     topic.interval = nextInterval;
     let next = new Date();
     next.setDate(next.getDate() + Math.ceil(topic.interval));
