@@ -60,6 +60,8 @@
                 class="px-3 py-1.5 rounded-lg text-xs font-semibold border border-slate-200 bg-white text-slate-600 hover:bg-slate-50">Analytics</a>
             <a href="#/topics" data-route-link="topics"
                 class="px-3 py-1.5 rounded-lg text-xs font-semibold border border-slate-200 bg-white text-slate-600 hover:bg-slate-50">Topics</a>
+            <a href="#/tutorial" data-route-link="tutorial"
+                class="px-3 py-1.5 rounded-lg text-xs font-semibold border border-slate-200 bg-white text-slate-600 hover:bg-slate-50">Tutorial</a>
             <a href="#/sync" data-route-link="sync"
                 class="px-3 py-1.5 rounded-lg text-xs font-semibold border border-slate-200 bg-white text-slate-600 hover:bg-slate-50">Sync</a>
         </nav>
@@ -233,6 +235,53 @@
                     class="p-2 px-4 rounded-full border border-slate-200 text-sm focus:outline-none focus:border-indigo-400 w-48 transition-all focus:w-64">
             </div>
             <div id="libraryList" class="grid grid-cols-1 md:grid-cols-2 gap-4 text-sm"></div>
+        </section>
+
+        <section data-route-section="tutorial" class="bg-white p-6 rounded-2xl shadow-sm mb-12 border border-slate-100">
+            <div class="flex flex-col md:flex-row md:items-center md:justify-between gap-3 mb-4">
+                <h2 class="text-lg font-bold text-slate-700">How To Use IntellectFlow</h2>
+                <div class="text-xs text-slate-400">Beginner guide</div>
+            </div>
+
+            <div class="rounded-xl border border-indigo-100 bg-indigo-50 p-4 text-sm text-indigo-900 mb-6">
+                IntellectFlow helps you study a little every day without overloading your schedule. Add topics, review what is due, and let the app decide when each topic should come back.
+            </div>
+
+            <div class="space-y-4 text-sm">
+                <div class="rounded-xl border border-slate-100 bg-slate-50 p-4">
+                    <div class="font-semibold text-slate-700 mb-1">1. Set your daily capacity</div>
+                    <p class="text-slate-600">At the top-right, set how many minutes you can realistically study today. Start small (for example: 30 to 60 minutes).</p>
+                </div>
+                <div class="rounded-xl border border-slate-100 bg-slate-50 p-4">
+                    <div class="font-semibold text-slate-700 mb-1">2. Add topics</div>
+                    <p class="text-slate-600">Open the <span class="font-semibold">Topics</span> tab, add a topic name, optional category, and session length. Add everything you want to learn over time.</p>
+                </div>
+                <div class="rounded-xl border border-slate-100 bg-slate-50 p-4">
+                    <div class="font-semibold text-slate-700 mb-1">3. Follow today's agenda</div>
+                    <p class="text-slate-600">In <span class="font-semibold">Dashboard</span>, complete due topics one by one. If total load is too high, the app defers extra items to reduce burnout.</p>
+                </div>
+                <div class="rounded-xl border border-slate-100 bg-slate-50 p-4">
+                    <div class="font-semibold text-slate-700 mb-1">4. Choose honest review feedback</div>
+                    <p class="text-slate-600">After each review, click the result that matches your memory:
+                        <span class="font-semibold text-red-600">Struggled</span>,
+                        <span class="font-semibold text-amber-600">Okay</span>, or
+                        <span class="font-semibold text-green-700">Mastered</span>.
+                        This is what teaches the scheduler.
+                    </p>
+                </div>
+                <div class="rounded-xl border border-slate-100 bg-slate-50 p-4">
+                    <div class="font-semibold text-slate-700 mb-1">5. Let spaced repetition do the rest</div>
+                    <p class="text-slate-600">Topics you struggle with come back sooner. Strong topics get pushed further out. New or forgotten topics go through short learning steps before longer intervals.</p>
+                </div>
+                <div class="rounded-xl border border-slate-100 bg-slate-50 p-4">
+                    <div class="font-semibold text-slate-700 mb-1">6. Check progress in Analytics</div>
+                    <p class="text-slate-600">Use <span class="font-semibold">Analytics</span> to track study consistency, difficulty mix, and SRS quality metrics like retention proxy and overdue rate.</p>
+                </div>
+                <div class="rounded-xl border border-slate-100 bg-slate-50 p-4">
+                    <div class="font-semibold text-slate-700 mb-1">7. Keep your data safe</div>
+                    <p class="text-slate-600">Use <span class="font-semibold">Backup (.json)</span> regularly. If you study on multiple devices, sign in on the <span class="font-semibold">Sync</span> tab.</p>
+                </div>
+            </div>
         </section>
     </div>
 

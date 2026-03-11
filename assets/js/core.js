@@ -360,7 +360,7 @@ function updateClarityContext() {
 function getRouteFromHash() {
     const hash = (window.location.hash || '').trim().toLowerCase();
     const route = hash.replace(/^#\/?/, '');
-    const allowed = ['dashboard', 'analytics', 'topics', 'sync'];
+    const allowed = ['dashboard', 'analytics', 'topics', 'tutorial', 'sync'];
     return allowed.includes(route) ? route : 'dashboard';
 }
 

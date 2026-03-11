@@ -9,11 +9,19 @@ Live app: `https://nits41089.github.io/StudyApp/`
 - Adds study topics with estimated duration (`20m`, `45m`, `90m`)
 - Builds a daily agenda based on your daily capacity (minutes)
 - Defers overflow topics to avoid burnout
-- Tracks streaks and next-review dates (simple spaced review logic)
+- Uses adaptive spaced repetition with:
+  - learning-phase progression (`1d -> 2d -> 4d`) for new/forgotten topics
+  - per-topic ease factor updates from review feedback
+  - timing-aware interval changes (overdue/early effects)
+  - stability damping from recent struggle history
+- Prioritizes due topics by risk (overdue days, lapses, ease, recent hard rate)
+- Tracks streaks and next-review dates
+- Shows SRS quality metrics (retention proxy, hard within 7d, overdue rate, learning vs graduated hard rate)
 - Lets you edit/delete topics
 - Backup/restore data as JSON
 - Cloud sync across devices using Supabase Auth + Postgres
 - Microsoft Clarity analytics (behavior + custom events)
+- Includes an in-app `Tutorial` tab for first-time users
 
 ## Tech stack
 
@@ -42,17 +50,19 @@ Live app: `https://nits41089.github.io/StudyApp/`
 The app uses client-side hash routes (works with GitHub Pages static hosting):
 
 - `#/dashboard` - today agenda
-- `#/analytics` - activity charts + category insights
+- `#/analytics` - activity charts + category insights + SRS quality metrics
 - `#/topics` - add/edit topics + library
+- `#/tutorial` - beginner-friendly walkthrough of how to use the app
 - `#/sync` - cloud auth and sync controls
 
 ### Local-only mode (no sign-in)
 
 1. Open the app
-2. Add topics and choose session length
-3. Set your `Daily Capacity (Min)`
-4. Complete due topics as `Struggled`, `Okay`, or `Mastered`
-5. Data is stored in your browser (`localStorage`)
+2. (Optional) Open the `Tutorial` tab for a quick guided walkthrough
+3. Add topics and choose session length
+4. Set your `Daily Capacity (Min)`
+5. Complete due topics as `Struggled`, `Okay`, or `Mastered`
+6. Data is stored in your browser (`localStorage`)
 
 ### Cloud sync mode (use across devices)
 
@@ -66,6 +76,20 @@ The app uses client-side hash routes (works with GitHub Pages static hosting):
 
 - `Backup (.json)` downloads your topic list
 - `Restore` imports a previous backup file
+
+### Spaced repetition model (current)
+
+- Review outcomes:
+  - `Struggled` resets interval to `1` day and returns topic to learning phase
+  - `Okay` and `Mastered` increase intervals using adaptive factors
+- Learning phase:
+  - short steps `1d -> 2d -> 4d` before full long-interval scheduling
+- Adaptive factors:
+  - ease factor changes per review (`easy` up, `medium` slightly down, `hard` down)
+  - overdue/early timing adjustment
+  - stability damping when recent history has many `hard` outcomes
+- Due priority:
+  - higher priority for topics that are overdue, repeatedly lapsed, low-ease, or recently difficult
 
 ## Run locally
 
@@ -204,6 +228,6 @@ See `SUPABASE_SETUP.md` for the full checklist.
 ## Future improvements (optional)
 
 - Conflict resolution/merge UI for multi-device edits
-- Better analytics funnel events and dashboards
+- SRS settings UI to tune algorithm constants without code changes
+- Leech handling for repeatedly failed topics
 - PWA offline caching (service worker)
-- Multi-list / categories / tags
