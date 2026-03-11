@@ -26,6 +26,11 @@ function handleTopicSubmit() {
             interval: 1,
             streak: 0,
             reviewCount: 0,
+            ease: 2.3,
+            lapses: 0,
+            lastReviewedAt: null,
+            dueCount: 0,
+            recentOutcomes: [],
             categories
         });
         document.getElementById('topicName').value = '';
@@ -86,19 +91,40 @@ function completeTopic(id, difficulty) {
     const topic = topics.find(t => t.id === id);
     if (!topic) return;
     const multipliers = { easy: 2.5, medium: 1.5, hard: 0 };
+    if (!Object.prototype.hasOwnProperty.call(multipliers, difficulty)) return;
+    const clamp = (value, min, max) => Math.min(max, Math.max(min, value));
+    const minInterval = 1;
+    const maxInterval = 120;
+    const maxSingleJumpDays = 30;
+    const previousInterval = clamp(Number(topic.interval) || minInterval, minInterval, maxInterval);
+    let nextInterval = minInterval;
+    const today = getDateKey(0);
 
     if (difficulty === 'hard') {
-        topic.interval = 1;
+        nextInterval = minInterval;
         topic.streak = 0;
+        topic.lapses = Math.max(0, Number(topic.lapses) || 0) + 1;
     } else {
-        topic.interval *= multipliers[difficulty];
+        const multiplied = previousInterval * multipliers[difficulty];
+        const jumpCapped = Math.min(multiplied, previousInterval + maxSingleJumpDays);
+        nextInterval = clamp(jumpCapped, minInterval, maxInterval);
         topic.streak += 1;
     }
 
+    const dueDate = getDateObject(String(topic.nextReview || today));
+    const todayDate = getDateObject(today);
+    if (!Number.isNaN(dueDate.getTime()) && dueDate < todayDate) {
+        topic.dueCount = Math.max(0, Number(topic.dueCount) || 0) + 1;
+    }
+
+    topic.interval = nextInterval;
     let next = new Date();
     next.setDate(next.getDate() + Math.ceil(topic.interval));
     topic.nextReview = next.toISOString().split('T')[0];
     topic.reviewCount = (Number(topic.reviewCount) || 0) + 1;
+    topic.lastReviewedAt = today;
+    const recentOutcomes = Array.isArray(topic.recentOutcomes) ? topic.recentOutcomes : [];
+    topic.recentOutcomes = [...recentOutcomes, difficulty].slice(-10);
     recordActivity(topic.weight, difficulty, topic.categories);
     save();
     trackClarityEvent(`topic_completed_${difficulty}`);

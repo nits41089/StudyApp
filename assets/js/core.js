@@ -170,16 +170,36 @@ function normalizeTopics(raw) {
     if (!Array.isArray(raw)) return [];
     return raw
         .filter(item => item && typeof item === 'object')
-        .map(item => ({
-            id: Number(item.id) || Date.now() + Math.floor(Math.random() * 1000),
-            name: String(item.name || '').trim(),
-            weight: Number(item.weight) || 45,
-            nextReview: String(item.nextReview || new Date().toISOString().split('T')[0]),
-            interval: Number(item.interval) || 1,
-            streak: Number(item.streak) || 0,
-            reviewCount: Math.max(0, Number(item.reviewCount) || 0),
-            categories: normalizeCategoryList(item.categories || item.category || [])
-        }))
+        .map(item => {
+            const lastReviewedAtRaw = String(item.lastReviewedAt || '').slice(0, 10);
+            const hasValidLastReviewedAt = /^\d{4}-\d{2}-\d{2}$/.test(lastReviewedAtRaw);
+            const recentOutcomes = Array.isArray(item.recentOutcomes)
+                ? item.recentOutcomes
+                    .map(value => String(value).toLowerCase())
+                    .filter(value => value === 'hard' || value === 'medium' || value === 'easy')
+                    .slice(-10)
+                : [];
+            const parsedEase = Number(item.ease);
+            const normalizedEase = Number.isFinite(parsedEase)
+                ? Math.min(2.8, Math.max(1.3, parsedEase))
+                : 2.3;
+
+            return {
+                id: Number(item.id) || Date.now() + Math.floor(Math.random() * 1000),
+                name: String(item.name || '').trim(),
+                weight: Number(item.weight) || 45,
+                nextReview: String(item.nextReview || new Date().toISOString().split('T')[0]),
+                interval: Number(item.interval) || 1,
+                streak: Number(item.streak) || 0,
+                reviewCount: Math.max(0, Number(item.reviewCount) || 0),
+                ease: normalizedEase,
+                lapses: Math.max(0, Number(item.lapses) || 0),
+                lastReviewedAt: hasValidLastReviewedAt ? lastReviewedAtRaw : null,
+                dueCount: Math.max(0, Number(item.dueCount) || 0),
+                recentOutcomes,
+                categories: normalizeCategoryList(item.categories || item.category || [])
+            };
+        })
         .filter(item => item.name);
 }
 
