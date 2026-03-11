@@ -401,14 +401,73 @@ function render() {
     const overflowNotice = document.getElementById('overflowNotice');
     const dailyCap = parseInt(document.getElementById('dailyCap').value);
     const today = getDateKey(0);
+    const todayDate = getDateObject(today);
+    const msPerDay = 24 * 60 * 60 * 1000;
 
     let currentLoad = 0;
     let hasOverflow = false;
     agendaList.innerHTML = '';
 
-    const dueTopics = topics.filter(t => t.nextReview <= today).sort((a, b) => a.weight - b.weight);
+    const getReviewDifficultySample = (topic) => {
+        if (Array.isArray(topic.recentReviewHistory)) {
+            const values = topic.recentReviewHistory
+                .filter(entry => entry && typeof entry === 'object')
+                .map(entry => String(entry.difficulty || '').toLowerCase())
+                .filter(value => value === 'hard' || value === 'medium' || value === 'easy')
+                .slice(-10);
+            if (values.length > 0) return values;
+        }
+        if (Array.isArray(topic.recentOutcomes)) {
+            return topic.recentOutcomes
+                .map(value => String(value).toLowerCase())
+                .filter(value => value === 'hard' || value === 'medium' || value === 'easy')
+                .slice(-10);
+        }
+        return [];
+    };
 
-    dueTopics.forEach(topic => {
+    const getDuePriority = (topic) => {
+        const dueDate = getDateObject(String(topic.nextReview || today));
+        const dueDateValid = !Number.isNaN(dueDate.getTime()) && !Number.isNaN(todayDate.getTime());
+        const overdueDays = dueDateValid
+            ? Math.max(0, Math.floor((todayDate.getTime() - dueDate.getTime()) / msPerDay))
+            : 0;
+        const lapses = Math.max(0, Number(topic.lapses) || 0);
+        const parsedEase = Number(topic.ease);
+        const ease = Number.isFinite(parsedEase) ? Math.min(2.8, Math.max(1.3, parsedEase)) : 2.3;
+        const difficultySample = getReviewDifficultySample(topic);
+        const hardCount = difficultySample.filter(value => value === 'hard').length;
+        const hardRate = difficultySample.length > 0 ? hardCount / difficultySample.length : 0;
+
+        const score =
+            (overdueDays * 5) +
+            (lapses * 3) +
+            ((2.8 - ease) * 2) +
+            (hardRate * 4);
+
+        const reasonParts = [];
+        if (overdueDays > 0) reasonParts.push(`Overdue ${overdueDays}d`);
+        if (lapses > 0) reasonParts.push(`${lapses} lapse${lapses === 1 ? '' : 's'}`);
+        if (difficultySample.length >= 3 && hardRate >= 0.34) {
+            reasonParts.push(`${Math.round(hardRate * 100)}% hard recently`);
+        }
+
+        return {
+            score,
+            reason: reasonParts.length > 0 ? reasonParts.join(' • ') : 'Due today'
+        };
+    };
+
+    const dueTopics = topics
+        .filter(t => t.nextReview <= today)
+        .map(topic => ({ topic, priority: getDuePriority(topic) }))
+        .sort((a, b) => {
+            if (b.priority.score !== a.priority.score) return b.priority.score - a.priority.score;
+            if (a.topic.weight !== b.topic.weight) return a.topic.weight - b.topic.weight;
+            return String(a.topic.name || '').localeCompare(String(b.topic.name || ''));
+        });
+
+    dueTopics.forEach(({ topic, priority }) => {
         if (currentLoad + topic.weight <= dailyCap) {
             currentLoad += topic.weight;
             const card = document.createElement('div');
@@ -421,6 +480,7 @@ function render() {
                         <span>⏱️ ${topic.weight} min</span>
                         <span>🔥 Streak: ${topic.streak}</span>
                     </div>
+                    <div class="text-xs text-slate-500 mt-1">${priority.reason}</div>
                 </div>
                 <div class="flex gap-2">
                     <button onclick="completeTopic(${topic.id}, 'hard')" class="px-3 py-2 text-xs font-bold rounded-lg border border-red-200 text-red-600 hover:bg-red-50">Struggled</button>
