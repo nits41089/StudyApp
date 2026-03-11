@@ -255,6 +255,18 @@ function normalizeActivityLog(raw) {
             easy: Math.max(0, Number(item.easy) || 0),
             medium: Math.max(0, Number(item.medium) || 0),
             hard: Math.max(0, Number(item.hard) || 0),
+            srsRetentionEligible: Math.max(0, Number(item.srsRetentionEligible) || 0),
+            srsRetentionSuccess: Math.max(0, Number(item.srsRetentionSuccess) || 0),
+            srsHardWithin7d: Math.max(0, Number(item.srsHardWithin7d) || 0),
+            srsOverdueReviews: Math.max(0, Number(item.srsOverdueReviews) || 0),
+            srsDaysSinceLastTotal: Math.max(0, Number(item.srsDaysSinceLastTotal) || 0),
+            srsDaysSinceLastCount: Math.max(0, Number(item.srsDaysSinceLastCount) || 0),
+            srsLearningReviews: Math.max(0, Number(item.srsLearningReviews) || 0),
+            srsLearningHard: Math.max(0, Number(item.srsLearningHard) || 0),
+            srsGraduatedReviews: Math.max(0, Number(item.srsGraduatedReviews) || 0),
+            srsGraduatedHard: Math.max(0, Number(item.srsGraduatedHard) || 0),
+            srsIntervalAtReviewTotal: Math.max(0, Number(item.srsIntervalAtReviewTotal) || 0),
+            srsIntervalAtReviewCount: Math.max(0, Number(item.srsIntervalAtReviewCount) || 0),
             categories: normalizeCategoryCountMap(item.categories)
         };
 
@@ -265,6 +277,18 @@ function normalizeActivityLog(raw) {
             easy: 0,
             medium: 0,
             hard: 0,
+            srsRetentionEligible: 0,
+            srsRetentionSuccess: 0,
+            srsHardWithin7d: 0,
+            srsOverdueReviews: 0,
+            srsDaysSinceLastTotal: 0,
+            srsDaysSinceLastCount: 0,
+            srsLearningReviews: 0,
+            srsLearningHard: 0,
+            srsGraduatedReviews: 0,
+            srsGraduatedHard: 0,
+            srsIntervalAtReviewTotal: 0,
+            srsIntervalAtReviewCount: 0,
             categories: {}
         };
 
@@ -273,6 +297,18 @@ function normalizeActivityLog(raw) {
         existing.easy += sanitized.easy;
         existing.medium += sanitized.medium;
         existing.hard += sanitized.hard;
+        existing.srsRetentionEligible += sanitized.srsRetentionEligible;
+        existing.srsRetentionSuccess += sanitized.srsRetentionSuccess;
+        existing.srsHardWithin7d += sanitized.srsHardWithin7d;
+        existing.srsOverdueReviews += sanitized.srsOverdueReviews;
+        existing.srsDaysSinceLastTotal += sanitized.srsDaysSinceLastTotal;
+        existing.srsDaysSinceLastCount += sanitized.srsDaysSinceLastCount;
+        existing.srsLearningReviews += sanitized.srsLearningReviews;
+        existing.srsLearningHard += sanitized.srsLearningHard;
+        existing.srsGraduatedReviews += sanitized.srsGraduatedReviews;
+        existing.srsGraduatedHard += sanitized.srsGraduatedHard;
+        existing.srsIntervalAtReviewTotal += sanitized.srsIntervalAtReviewTotal;
+        existing.srsIntervalAtReviewCount += sanitized.srsIntervalAtReviewCount;
         existing.categories = mergeCategoryCounts(existing.categories, sanitized.categories);
         byDate.set(date, existing);
     });

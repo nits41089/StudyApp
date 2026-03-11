@@ -124,6 +124,18 @@ function completeTopic(id, difficulty) {
     const daysFromDue = hasValidDueDate
         ? Math.floor((todayDate.getTime() - dueDate.getTime()) / msPerDay)
         : 0;
+    const previousLastReviewedAtRaw = String(topic.lastReviewedAt || '').slice(0, 10);
+    const hasValidLastReviewedAt = /^\d{4}-\d{2}-\d{2}$/.test(previousLastReviewedAtRaw);
+    const previousLastReviewedDate = hasValidLastReviewedAt ? getDateObject(previousLastReviewedAtRaw) : null;
+    const daysSinceLastReview = (
+        previousLastReviewedDate &&
+        !Number.isNaN(previousLastReviewedDate.getTime()) &&
+        !Number.isNaN(todayDate.getTime())
+    )
+        ? Math.max(0, Math.floor((todayDate.getTime() - previousLastReviewedDate.getTime()) / msPerDay))
+        : null;
+    const wasOverdue = hasValidDueDate && daysFromDue > 0;
+    const wasLearningAtReview = inLearning;
     const reviewHistory = Array.isArray(topic.recentReviewHistory)
         ? topic.recentReviewHistory
             .filter(entry => entry && typeof entry === 'object')
@@ -196,7 +208,7 @@ function completeTopic(id, difficulty) {
         topic.streak += 1;
     }
 
-    if (hasValidDueDate && daysFromDue > 0) {
+    if (wasOverdue) {
         topic.dueCount = Math.max(0, Number(topic.dueCount) || 0) + 1;
     }
 
@@ -211,7 +223,13 @@ function completeTopic(id, difficulty) {
     topic.lastReviewedAt = today;
     topic.recentOutcomes = [...stabilitySample, difficulty].slice(-10);
     topic.recentReviewHistory = [...baselineReviewHistory, { difficulty, date: today }].slice(-10);
-    recordActivity(topic.weight, difficulty, topic.categories);
+    recordActivity(topic.weight, difficulty, topic.categories, {
+        daysSinceLastReview,
+        wasOverdue,
+        hardWithin7d: difficulty === 'hard' && daysSinceLastReview != null && daysSinceLastReview <= 7,
+        wasLearning: wasLearningAtReview,
+        intervalAtReview: previousInterval
+    });
     save();
     trackClarityEvent(`topic_completed_${difficulty}`);
     setClarityTag('last_topic_difficulty', difficulty);
@@ -254,6 +272,18 @@ function getRecentActivity(days) {
             easy: 0,
             medium: 0,
             hard: 0,
+            srsRetentionEligible: 0,
+            srsRetentionSuccess: 0,
+            srsHardWithin7d: 0,
+            srsOverdueReviews: 0,
+            srsDaysSinceLastTotal: 0,
+            srsDaysSinceLastCount: 0,
+            srsLearningReviews: 0,
+            srsLearningHard: 0,
+            srsGraduatedReviews: 0,
+            srsGraduatedHard: 0,
+            srsIntervalAtReviewTotal: 0,
+            srsIntervalAtReviewCount: 0,
             categories: {}
         });
     }
@@ -275,10 +305,21 @@ function getActiveStreak() {
     return streak;
 }
 
-function recordActivity(minutes, difficulty, categories = []) {
+function recordActivity(minutes, difficulty, categories = [], srsMeta = {}) {
     const today = getDateKey(0);
     const day = activityLog.find(entry => entry.date === today);
     const categoryCounts = buildCategoryReviewCountMap(categories);
+    const hasDaysSinceLast = srsMeta.daysSinceLastReview != null && Number.isFinite(Number(srsMeta.daysSinceLastReview));
+    const parsedDaysSinceLast = hasDaysSinceLast ? Number(srsMeta.daysSinceLastReview) : null;
+    const daysSinceLastReview = hasDaysSinceLast ? Math.max(0, parsedDaysSinceLast) : null;
+    const wasOverdue = srsMeta.wasOverdue === true;
+    const hardWithin7d = srsMeta.hardWithin7d === true;
+    const wasLearning = srsMeta.wasLearning === true;
+    const hasIntervalAtReview = srsMeta.intervalAtReview != null && Number.isFinite(Number(srsMeta.intervalAtReview));
+    const parsedIntervalAtReview = hasIntervalAtReview ? Number(srsMeta.intervalAtReview) : null;
+    const intervalAtReview = hasIntervalAtReview ? Math.max(0, parsedIntervalAtReview) : null;
+    const retentionEligible = daysSinceLastReview != null && daysSinceLastReview <= 7;
+    const retentionSuccess = retentionEligible && difficulty !== 'hard';
 
     if (day) {
         day.minutes += Math.max(0, Number(minutes) || 0);
@@ -286,6 +327,18 @@ function recordActivity(minutes, difficulty, categories = []) {
         if (difficulty === 'easy' || difficulty === 'medium' || difficulty === 'hard') {
             day[difficulty] += 1;
         }
+        day.srsRetentionEligible = Math.max(0, Number(day.srsRetentionEligible) || 0) + (retentionEligible ? 1 : 0);
+        day.srsRetentionSuccess = Math.max(0, Number(day.srsRetentionSuccess) || 0) + (retentionSuccess ? 1 : 0);
+        day.srsHardWithin7d = Math.max(0, Number(day.srsHardWithin7d) || 0) + (hardWithin7d ? 1 : 0);
+        day.srsOverdueReviews = Math.max(0, Number(day.srsOverdueReviews) || 0) + (wasOverdue ? 1 : 0);
+        day.srsDaysSinceLastTotal = Math.max(0, Number(day.srsDaysSinceLastTotal) || 0) + (daysSinceLastReview != null ? daysSinceLastReview : 0);
+        day.srsDaysSinceLastCount = Math.max(0, Number(day.srsDaysSinceLastCount) || 0) + (daysSinceLastReview != null ? 1 : 0);
+        day.srsLearningReviews = Math.max(0, Number(day.srsLearningReviews) || 0) + (wasLearning ? 1 : 0);
+        day.srsLearningHard = Math.max(0, Number(day.srsLearningHard) || 0) + (wasLearning && difficulty === 'hard' ? 1 : 0);
+        day.srsGraduatedReviews = Math.max(0, Number(day.srsGraduatedReviews) || 0) + (wasLearning ? 0 : 1);
+        day.srsGraduatedHard = Math.max(0, Number(day.srsGraduatedHard) || 0) + (!wasLearning && difficulty === 'hard' ? 1 : 0);
+        day.srsIntervalAtReviewTotal = Math.max(0, Number(day.srsIntervalAtReviewTotal) || 0) + (intervalAtReview != null ? intervalAtReview : 0);
+        day.srsIntervalAtReviewCount = Math.max(0, Number(day.srsIntervalAtReviewCount) || 0) + (intervalAtReview != null ? 1 : 0);
         day.categories = mergeCategoryCounts(day.categories, categoryCounts);
         return;
     }
@@ -297,6 +350,18 @@ function recordActivity(minutes, difficulty, categories = []) {
         easy: difficulty === 'easy' ? 1 : 0,
         medium: difficulty === 'medium' ? 1 : 0,
         hard: difficulty === 'hard' ? 1 : 0,
+        srsRetentionEligible: retentionEligible ? 1 : 0,
+        srsRetentionSuccess: retentionSuccess ? 1 : 0,
+        srsHardWithin7d: hardWithin7d ? 1 : 0,
+        srsOverdueReviews: wasOverdue ? 1 : 0,
+        srsDaysSinceLastTotal: daysSinceLastReview != null ? daysSinceLastReview : 0,
+        srsDaysSinceLastCount: daysSinceLastReview != null ? 1 : 0,
+        srsLearningReviews: wasLearning ? 1 : 0,
+        srsLearningHard: wasLearning && difficulty === 'hard' ? 1 : 0,
+        srsGraduatedReviews: wasLearning ? 0 : 1,
+        srsGraduatedHard: !wasLearning && difficulty === 'hard' ? 1 : 0,
+        srsIntervalAtReviewTotal: intervalAtReview != null ? intervalAtReview : 0,
+        srsIntervalAtReviewCount: intervalAtReview != null ? 1 : 0,
         categories: categoryCounts
     });
     activityLog = normalizeActivityLog(activityLog);
@@ -375,6 +440,70 @@ function renderAnalytics() {
             </div>
         `;
     }).join('');
+
+    const srsRecent30 = getRecentActivity(30);
+    const srsTotals = srsRecent30.reduce((acc, day) => {
+        acc.reviews += Math.max(0, Number(day.completed) || 0);
+        acc.retentionEligible += Math.max(0, Number(day.srsRetentionEligible) || 0);
+        acc.retentionSuccess += Math.max(0, Number(day.srsRetentionSuccess) || 0);
+        acc.hardWithin7d += Math.max(0, Number(day.srsHardWithin7d) || 0);
+        acc.overdue += Math.max(0, Number(day.srsOverdueReviews) || 0);
+        acc.daysTotal += Math.max(0, Number(day.srsDaysSinceLastTotal) || 0);
+        acc.daysCount += Math.max(0, Number(day.srsDaysSinceLastCount) || 0);
+        acc.learningReviews += Math.max(0, Number(day.srsLearningReviews) || 0);
+        acc.learningHard += Math.max(0, Number(day.srsLearningHard) || 0);
+        acc.graduatedReviews += Math.max(0, Number(day.srsGraduatedReviews) || 0);
+        acc.graduatedHard += Math.max(0, Number(day.srsGraduatedHard) || 0);
+        acc.intervalTotal += Math.max(0, Number(day.srsIntervalAtReviewTotal) || 0);
+        acc.intervalCount += Math.max(0, Number(day.srsIntervalAtReviewCount) || 0);
+        return acc;
+    }, {
+        reviews: 0,
+        retentionEligible: 0,
+        retentionSuccess: 0,
+        hardWithin7d: 0,
+        overdue: 0,
+        daysTotal: 0,
+        daysCount: 0,
+        learningReviews: 0,
+        learningHard: 0,
+        graduatedReviews: 0,
+        graduatedHard: 0,
+        intervalTotal: 0,
+        intervalCount: 0
+    });
+
+    const formatPercent = (num, den) => (den > 0 ? `${Math.round((num / den) * 100)}%` : '--');
+    const retentionProxy = formatPercent(srsTotals.retentionSuccess, srsTotals.retentionEligible);
+    const hardWithin7dRate = formatPercent(srsTotals.hardWithin7d, srsTotals.retentionEligible);
+    const overdueRate = formatPercent(srsTotals.overdue, srsTotals.reviews);
+    const learningHardRate = formatPercent(srsTotals.learningHard, srsTotals.learningReviews);
+    const graduatedHardRate = formatPercent(srsTotals.graduatedHard, srsTotals.graduatedReviews);
+    const avgDaysSinceLast = srsTotals.daysCount > 0
+        ? `${(srsTotals.daysTotal / srsTotals.daysCount).toFixed(1)}d`
+        : '--';
+    const avgIntervalAtReview = srsTotals.intervalCount > 0
+        ? `${(srsTotals.intervalTotal / srsTotals.intervalCount).toFixed(1)}d`
+        : '--';
+
+    document.getElementById('srsRetentionProxy').textContent = retentionProxy;
+    document.getElementById('srsHardWithin7d').textContent = hardWithin7dRate;
+    document.getElementById('srsOverdueRate').textContent = overdueRate;
+    document.getElementById('srsAvgDaysSinceLast').textContent = avgDaysSinceLast;
+    document.getElementById('srsAvgIntervalAtReview').textContent = avgIntervalAtReview;
+    document.getElementById('srsBucketBreakdown').innerHTML = `
+        <div class="flex justify-between text-xs text-slate-600">
+            <span>Learning hard rate</span>
+            <span class="font-semibold">${learningHardRate}</span>
+        </div>
+        <div class="flex justify-between text-xs text-slate-600">
+            <span>Graduated hard rate</span>
+            <span class="font-semibold">${graduatedHardRate}</span>
+        </div>
+    `;
+    document.getElementById('srsQualityNote').textContent = srsTotals.retentionEligible > 0
+        ? `Based on ${srsTotals.retentionEligible} short-gap reviews in the last 30 days`
+        : 'Review more in the next few days to build retention signal';
 
     const categoryTotals = Object.entries(getCategoryReviewTotals());
     const sorted = [...categoryTotals].sort((a, b) => {

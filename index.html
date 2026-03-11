@@ -175,6 +175,34 @@
             </div>
 
             <div class="mt-6">
+                <div class="text-xs text-slate-400 font-semibold uppercase">SRS Quality (Last 30 Days)</div>
+                <div class="grid grid-cols-2 md:grid-cols-5 gap-3 mt-3">
+                    <div class="bg-slate-50 rounded-xl p-3 border border-slate-100">
+                        <div class="text-[11px] uppercase tracking-wide text-slate-400 font-semibold">Retention Proxy</div>
+                        <div id="srsRetentionProxy" class="text-xl font-bold text-slate-800 mt-1">--</div>
+                    </div>
+                    <div class="bg-slate-50 rounded-xl p-3 border border-slate-100">
+                        <div class="text-[11px] uppercase tracking-wide text-slate-400 font-semibold">Hard <= 7d</div>
+                        <div id="srsHardWithin7d" class="text-xl font-bold text-slate-800 mt-1">--</div>
+                    </div>
+                    <div class="bg-slate-50 rounded-xl p-3 border border-slate-100">
+                        <div class="text-[11px] uppercase tracking-wide text-slate-400 font-semibold">Overdue Rate</div>
+                        <div id="srsOverdueRate" class="text-xl font-bold text-slate-800 mt-1">--</div>
+                    </div>
+                    <div class="bg-slate-50 rounded-xl p-3 border border-slate-100">
+                        <div class="text-[11px] uppercase tracking-wide text-slate-400 font-semibold">Avg Gap</div>
+                        <div id="srsAvgDaysSinceLast" class="text-xl font-bold text-slate-800 mt-1">--</div>
+                    </div>
+                    <div class="bg-slate-50 rounded-xl p-3 border border-slate-100">
+                        <div class="text-[11px] uppercase tracking-wide text-slate-400 font-semibold">Avg Interval</div>
+                        <div id="srsAvgIntervalAtReview" class="text-xl font-bold text-slate-800 mt-1">--</div>
+                    </div>
+                </div>
+                <div id="srsBucketBreakdown" class="rounded-xl border border-slate-100 bg-slate-50 p-3 mt-3 space-y-2"></div>
+                <div id="srsQualityNote" class="text-[11px] text-slate-400 mt-2">Review more in the next few days to build retention signal</div>
+            </div>
+
+            <div class="mt-6">
                 <div class="flex items-center justify-between gap-3">
                     <div class="text-xs text-slate-400 font-semibold uppercase">Category Reviews (All Time)</div>
                     <button id="categorySortBtn" onclick="toggleCategorySort()"
