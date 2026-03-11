@@ -179,6 +179,30 @@ function normalizeTopics(raw) {
                     .filter(value => value === 'hard' || value === 'medium' || value === 'easy')
                     .slice(-10)
                 : [];
+            const recentReviewHistory = Array.isArray(item.recentReviewHistory)
+                ? item.recentReviewHistory
+                    .filter(entry => entry && typeof entry === 'object')
+                    .map(entry => ({
+                        difficulty: String(entry.difficulty || '').toLowerCase(),
+                        date: String(entry.date || '').slice(0, 10)
+                    }))
+                    .filter(entry => (
+                        (entry.difficulty === 'hard' || entry.difficulty === 'medium' || entry.difficulty === 'easy') &&
+                        /^\d{4}-\d{2}-\d{2}$/.test(entry.date)
+                    ))
+                    .slice(-10)
+                : [];
+            const fallbackHistoryDate = hasValidLastReviewedAt
+                ? lastReviewedAtRaw
+                : new Date().toISOString().split('T')[0];
+            const normalizedReviewHistory = recentReviewHistory.length > 0
+                ? recentReviewHistory
+                : recentOutcomes
+                    .map(difficulty => ({ difficulty, date: fallbackHistoryDate }))
+                    .slice(-10);
+            const normalizedRecentOutcomes = recentOutcomes.length > 0
+                ? recentOutcomes
+                : normalizedReviewHistory.map(entry => entry.difficulty).slice(-10);
             const parsedEase = Number(item.ease);
             const normalizedEase = Number.isFinite(parsedEase)
                 ? Math.min(2.8, Math.max(1.3, parsedEase))
@@ -196,7 +220,8 @@ function normalizeTopics(raw) {
                 lapses: Math.max(0, Number(item.lapses) || 0),
                 lastReviewedAt: hasValidLastReviewedAt ? lastReviewedAtRaw : null,
                 dueCount: Math.max(0, Number(item.dueCount) || 0),
-                recentOutcomes,
+                recentOutcomes: normalizedRecentOutcomes,
+                recentReviewHistory: normalizedReviewHistory,
                 categories: normalizeCategoryList(item.categories || item.category || [])
             };
         })

@@ -31,6 +31,7 @@ function handleTopicSubmit() {
             lastReviewedAt: null,
             dueCount: 0,
             recentOutcomes: [],
+            recentReviewHistory: [],
             categories
         });
         document.getElementById('topicName').value = '';
@@ -109,6 +110,37 @@ function completeTopic(id, difficulty) {
     const daysFromDue = hasValidDueDate
         ? Math.floor((todayDate.getTime() - dueDate.getTime()) / msPerDay)
         : 0;
+    const reviewHistory = Array.isArray(topic.recentReviewHistory)
+        ? topic.recentReviewHistory
+            .filter(entry => entry && typeof entry === 'object')
+            .map(entry => ({
+                difficulty: String(entry.difficulty || '').toLowerCase(),
+                date: String(entry.date || '').slice(0, 10)
+            }))
+            .filter(entry => (
+                (entry.difficulty === 'hard' || entry.difficulty === 'medium' || entry.difficulty === 'easy') &&
+                /^\d{4}-\d{2}-\d{2}$/.test(entry.date)
+            ))
+            .slice(-10)
+        : [];
+    const fallbackOutcomes = Array.isArray(topic.recentOutcomes)
+        ? topic.recentOutcomes
+            .map(value => String(value).toLowerCase())
+            .filter(value => value === 'hard' || value === 'medium' || value === 'easy')
+            .slice(-10)
+        : [];
+    const baselineReviewHistory = reviewHistory.length > 0
+        ? reviewHistory
+        : fallbackOutcomes.map(difficultyValue => ({ difficulty: difficultyValue, date: today })).slice(-10);
+    const stabilitySample = baselineReviewHistory.map(entry => entry.difficulty);
+    const hardCount = stabilitySample.filter(value => value === 'hard').length;
+    const hardRatio = stabilitySample.length > 0 ? hardCount / stabilitySample.length : 0;
+    let recentHardStreak = 0;
+    for (let i = stabilitySample.length - 1; i >= 0; i -= 1) {
+        if (stabilitySample[i] !== 'hard') break;
+        recentHardStreak += 1;
+    }
+    const stabilityFactor = clamp(1 - (hardRatio * 0.35) - (recentHardStreak * 0.08), 0.6, 1);
 
     if (difficulty === 'hard') {
         ease = clamp(ease - 0.2, minEase, maxEase);
@@ -132,7 +164,7 @@ function completeTopic(id, difficulty) {
         }
         timingFactor = clamp(timingFactor, 0.85, 1.2);
         const easeFactor = clamp(ease / 2.3, 0.75, 1.25);
-        const multiplied = previousInterval * multipliers[difficulty] * timingFactor * easeFactor;
+        const multiplied = previousInterval * multipliers[difficulty] * timingFactor * easeFactor * stabilityFactor;
         const jumpCapped = Math.min(multiplied, previousInterval + maxSingleJumpDays);
         nextInterval = clamp(jumpCapped, minInterval, maxInterval);
         topic.streak += 1;
@@ -149,8 +181,8 @@ function completeTopic(id, difficulty) {
     topic.nextReview = next.toISOString().split('T')[0];
     topic.reviewCount = (Number(topic.reviewCount) || 0) + 1;
     topic.lastReviewedAt = today;
-    const recentOutcomes = Array.isArray(topic.recentOutcomes) ? topic.recentOutcomes : [];
-    topic.recentOutcomes = [...recentOutcomes, difficulty].slice(-10);
+    topic.recentOutcomes = [...stabilitySample, difficulty].slice(-10);
+    topic.recentReviewHistory = [...baselineReviewHistory, { difficulty, date: today }].slice(-10);
     recordActivity(topic.weight, difficulty, topic.categories);
     save();
     trackClarityEvent(`topic_completed_${difficulty}`);
