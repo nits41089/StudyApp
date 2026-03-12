@@ -48,7 +48,7 @@ export async function callOpenAiForJson<T>({
         body: JSON.stringify({
             model,
             temperature,
-            max_tokens: maxTokens,
+            max_completion_tokens: maxTokens,
             messages: [
                 { role: 'system', content: systemPrompt },
                 { role: 'user', content: userPrompt }
