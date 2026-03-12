@@ -109,7 +109,7 @@ serve(async (req) => {
                     items: {
                         type: 'object',
                         additionalProperties: false,
-                        required: ['id', 'prompt', 'type', 'expectedAnswer'],
+                        required: ['id', 'prompt', 'type', 'choices', 'expectedAnswer'],
                         properties: {
                             id: { type: 'string', minLength: 1 },
                             prompt: { type: 'string', minLength: 5 },
