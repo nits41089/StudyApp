@@ -17,6 +17,7 @@ Live app: `https://nits41089.github.io/StudyApp/`
 - Prioritizes due topics by risk (overdue days, lapses, ease, recent hard rate)
 - Tracks streaks and next-review dates
 - Shows SRS quality metrics (retention proxy, hard within 7d, overdue rate, learning vs graduated hard rate)
+- Includes AI understanding checks on due topics (material -> questions -> score -> auto difficulty mapping)
 - Lets you edit/delete topics
 - Backup/restore data as JSON
 - Cloud sync across devices using Supabase Auth + Postgres
@@ -90,6 +91,43 @@ The app uses client-side hash routes (works with GitHub Pages static hosting):
   - stability damping when recent history has many `hard` outcomes
 - Due priority:
   - higher priority for topics that are overdue, repeatedly lapsed, low-ease, or recently difficult
+
+### AI understanding check (current)
+
+- On due cards, click `Assess with AI`.
+- Paste the study material and generate questions.
+- If a quiz already exists for that topic, the app reuses it by default.
+- Users can explicitly click `Regenerate Quiz` to create a fresh one.
+- Question count depends only on material length:
+  - `question_count = clamp(ceil(word_count / 220), 3, 25)`
+- Answer all generated questions, then grade with AI.
+- The suggested result maps to scheduler difficulty:
+  - `< 50` -> `Struggled`
+  - `50-79` -> `Okay`
+  - `>= 80` -> `Mastered`
+
+### AI backend setup (required for AI checks)
+
+Deploy these Supabase Edge Functions in your project:
+
+- `ai-generate-quiz`
+- `ai-grade-quiz`
+
+Set secrets before deployment:
+
+```bash
+supabase secrets set OPENAI_API_KEY=your_openai_api_key
+supabase secrets set OPENAI_MODEL=gpt-4.1-mini
+```
+
+Then deploy:
+
+```bash
+supabase functions deploy ai-generate-quiz
+supabase functions deploy ai-grade-quiz
+```
+
+The frontend calls these functions using your existing Supabase project config in `assets/js/core.js`.
 
 ## Run locally
 

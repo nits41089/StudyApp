@@ -262,11 +262,11 @@
                 </div>
                 <div class="rounded-xl border border-slate-100 bg-slate-50 p-4">
                     <div class="font-semibold text-slate-700 mb-1">4. Choose honest review feedback</div>
-                    <p class="text-slate-600">After each review, click the result that matches your memory:
+                    <p class="text-slate-600">After each review, either click the result that matches your memory:
                         <span class="font-semibold text-red-600">Struggled</span>,
                         <span class="font-semibold text-amber-600">Okay</span>, or
                         <span class="font-semibold text-green-700">Mastered</span>.
-                        This is what teaches the scheduler.
+                        Or use <span class="font-semibold text-indigo-700">Assess with AI</span> to answer generated questions from your material.
                     </p>
                 </div>
                 <div class="rounded-xl border border-slate-100 bg-slate-50 p-4">
@@ -274,15 +274,89 @@
                     <p class="text-slate-600">Topics you struggle with come back sooner. Strong topics get pushed further out. New or forgotten topics go through short learning steps before longer intervals.</p>
                 </div>
                 <div class="rounded-xl border border-slate-100 bg-slate-50 p-4">
-                    <div class="font-semibold text-slate-700 mb-1">6. Check progress in Analytics</div>
+                    <div class="font-semibold text-slate-700 mb-1">6. Use AI checks when you want objective feedback</div>
+                    <p class="text-slate-600">On a due topic, click <span class="font-semibold text-indigo-700">Assess with AI</span>, paste your material, answer the generated questions, and apply the result. Longer material gives more questions automatically. Existing quizzes are reused unless you click <span class="font-semibold text-indigo-700">Regenerate Quiz</span>.</p>
+                </div>
+                <div class="rounded-xl border border-slate-100 bg-slate-50 p-4">
+                    <div class="font-semibold text-slate-700 mb-1">7. Check progress in Analytics</div>
                     <p class="text-slate-600">Use <span class="font-semibold">Analytics</span> to track study consistency, difficulty mix, and SRS quality metrics like retention proxy and overdue rate.</p>
                 </div>
                 <div class="rounded-xl border border-slate-100 bg-slate-50 p-4">
-                    <div class="font-semibold text-slate-700 mb-1">7. Keep your data safe</div>
+                    <div class="font-semibold text-slate-700 mb-1">8. Keep your data safe</div>
                     <p class="text-slate-600">Use <span class="font-semibold">Backup (.json)</span> regularly. If you study on multiple devices, sign in on the <span class="font-semibold">Sync</span> tab.</p>
                 </div>
             </div>
         </section>
+    </div>
+
+    <div id="aiAssessModal" class="fixed inset-0 z-50 hidden">
+        <div class="absolute inset-0 bg-slate-900/60" onclick="closeAiAssessmentModal()"></div>
+        <div class="relative z-10 min-h-screen flex items-center justify-center p-4">
+            <div class="w-full max-w-3xl bg-white rounded-2xl shadow-xl border border-slate-200">
+                <div class="px-5 py-4 border-b border-slate-100 flex items-center justify-between gap-3">
+                    <div>
+                        <h3 class="text-lg font-bold text-slate-800">AI Understanding Check</h3>
+                        <p id="aiAssessTopicName" class="text-xs text-slate-500 mt-1">Topic</p>
+                    </div>
+                    <button onclick="closeAiAssessmentModal()" class="text-slate-400 hover:text-slate-600 text-sm font-semibold">Close</button>
+                </div>
+
+                <div class="p-5 space-y-4 max-h-[78vh] overflow-y-auto">
+                    <div class="text-xs text-slate-500">
+                        Paste your study material. Question count is based only on material length.
+                    </div>
+                    <textarea id="aiAssessMaterialInput" rows="8" placeholder="Paste notes, chapter text, or article excerpt..."
+                        class="w-full p-3 rounded-xl border border-slate-200 focus:ring-2 focus:ring-indigo-500 outline-none text-sm"></textarea>
+                    <div class="flex flex-wrap items-center justify-between gap-2 text-xs">
+                        <div class="text-slate-500">
+                            Words: <span id="aiAssessWordCount" class="font-semibold text-slate-700">0</span>
+                            · Questions: <span id="aiAssessQuestionCount" class="font-semibold text-slate-700">3</span>
+                        </div>
+                        <div class="flex flex-wrap gap-2">
+                            <button id="aiAssessGenerateBtn" onclick="generateAiAssessmentQuestions()"
+                                class="px-3 py-2 rounded-lg bg-indigo-600 text-white text-xs font-semibold hover:bg-indigo-700 disabled:opacity-50 disabled:cursor-not-allowed">
+                                Generate Questions
+                            </button>
+                            <button id="aiAssessRegenerateBtn" onclick="regenerateAiAssessmentQuestions()"
+                                class="hidden px-3 py-2 rounded-lg border border-indigo-200 text-indigo-700 text-xs font-semibold hover:bg-indigo-50 disabled:opacity-50 disabled:cursor-not-allowed">
+                                Regenerate Quiz
+                            </button>
+                        </div>
+                    </div>
+                    <div id="aiAssessStatus" class="text-xs text-slate-500"></div>
+
+                    <div id="aiAssessQuestionWrap" class="hidden">
+                        <div class="text-xs uppercase tracking-wide text-slate-400 font-semibold mb-2">Questions</div>
+                        <div id="aiAssessQuestions" class="space-y-3"></div>
+                        <div class="mt-3 flex flex-wrap gap-2">
+                            <button id="aiAssessGradeBtn" onclick="gradeAiAssessmentAnswers()"
+                                class="px-3 py-2 rounded-lg bg-emerald-600 text-white text-xs font-semibold hover:bg-emerald-700 disabled:opacity-50 disabled:cursor-not-allowed">
+                                Grade My Answers
+                            </button>
+                        </div>
+                    </div>
+
+                    <div id="aiAssessResultWrap" class="hidden rounded-xl border border-slate-100 bg-slate-50 p-4">
+                        <div class="text-xs uppercase tracking-wide text-slate-400 font-semibold">Result</div>
+                        <div class="mt-2 text-sm text-slate-700">
+                            Score: <span id="aiAssessScore" class="font-bold text-slate-900">--</span>
+                            · Suggested: <span id="aiAssessSuggestion" class="font-bold text-slate-900">--</span>
+                        </div>
+                        <div id="aiAssessFeedback" class="mt-2 text-sm text-slate-600"></div>
+                        <div class="mt-3 flex flex-wrap gap-2">
+                            <button id="aiAssessApplyBtn" onclick="applyAiAssessmentResult()"
+                                class="px-3 py-2 rounded-lg bg-indigo-600 text-white text-xs font-semibold hover:bg-indigo-700">
+                                Apply Result To Scheduler
+                            </button>
+                            <button onclick="closeAiAssessmentModal()"
+                                class="px-3 py-2 rounded-lg border border-slate-200 text-slate-700 text-xs font-semibold hover:bg-slate-100">
+                                Cancel
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
     </div>
 
     <script src="assets/js/core.js"></script>

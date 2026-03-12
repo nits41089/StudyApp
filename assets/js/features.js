@@ -90,6 +90,516 @@ function deleteTopic(id) {
     }
 }
 
+const AI_GENERATE_FUNCTION = 'ai-generate-quiz';
+const AI_GRADE_FUNCTION = 'ai-grade-quiz';
+let aiAssessmentState = {
+    topicId: null,
+    material: '',
+    wordCount: 0,
+    questionCount: 3,
+    questions: [],
+    result: null
+};
+
+function normalizeDifficultyLabel(value) {
+    const normalized = String(value || '').toLowerCase().trim();
+    if (normalized === 'easy' || normalized === 'mastered') return 'easy';
+    if (normalized === 'medium' || normalized === 'okay') return 'medium';
+    if (normalized === 'hard' || normalized === 'struggled') return 'hard';
+    return '';
+}
+
+function difficultyToReadableLabel(value) {
+    if (value === 'easy') return 'Mastered';
+    if (value === 'medium') return 'Okay';
+    return 'Struggled';
+}
+
+function scoreToDifficulty(score) {
+    if (!Number.isFinite(score)) return 'medium';
+    if (score >= 80) return 'easy';
+    if (score >= 50) return 'medium';
+    return 'hard';
+}
+
+function getWordCountFromMaterial(material) {
+    return String(material || '')
+        .trim()
+        .split(/\s+/)
+        .filter(Boolean)
+        .length;
+}
+
+function calculateQuestionCountFromMaterial(material) {
+    const words = getWordCountFromMaterial(material);
+    return Math.max(3, Math.min(25, Math.ceil(words / 220)));
+}
+
+function getAiModalElements() {
+    return {
+        modal: document.getElementById('aiAssessModal'),
+        topicName: document.getElementById('aiAssessTopicName'),
+        materialInput: document.getElementById('aiAssessMaterialInput'),
+        wordCount: document.getElementById('aiAssessWordCount'),
+        questionCount: document.getElementById('aiAssessQuestionCount'),
+        status: document.getElementById('aiAssessStatus'),
+        questionWrap: document.getElementById('aiAssessQuestionWrap'),
+        questionList: document.getElementById('aiAssessQuestions'),
+        resultWrap: document.getElementById('aiAssessResultWrap'),
+        score: document.getElementById('aiAssessScore'),
+        suggestion: document.getElementById('aiAssessSuggestion'),
+        feedback: document.getElementById('aiAssessFeedback'),
+        generateBtn: document.getElementById('aiAssessGenerateBtn'),
+        regenerateBtn: document.getElementById('aiAssessRegenerateBtn'),
+        gradeBtn: document.getElementById('aiAssessGradeBtn'),
+        applyBtn: document.getElementById('aiAssessApplyBtn')
+    };
+}
+
+function setAiAssessmentQuestionActionMode(mode = 'generate') {
+    const { generateBtn, regenerateBtn } = getAiModalElements();
+    if (generateBtn) generateBtn.classList.toggle('hidden', mode !== 'generate');
+    if (regenerateBtn) regenerateBtn.classList.toggle('hidden', mode !== 'regenerate');
+}
+
+function setAiAssessmentStatus(message, tone = 'slate') {
+    const { status } = getAiModalElements();
+    if (!status) return;
+    const toneClassMap = {
+        slate: 'text-slate-500',
+        indigo: 'text-indigo-600',
+        green: 'text-emerald-600',
+        amber: 'text-amber-600',
+        red: 'text-red-600'
+    };
+    status.className = `text-xs ${toneClassMap[tone] || toneClassMap.slate}`;
+    status.textContent = message || '';
+}
+
+function updateAiAssessmentLengthInfo() {
+    const {
+        materialInput,
+        wordCount: wordCountNode,
+        questionCount: questionCountNode
+    } = getAiModalElements();
+    if (!materialInput) return;
+
+    const material = String(materialInput.value || '');
+    const words = getWordCountFromMaterial(material);
+    const questionCount = calculateQuestionCountFromMaterial(material);
+    aiAssessmentState.material = material.trim();
+    aiAssessmentState.wordCount = words;
+    aiAssessmentState.questionCount = questionCount;
+
+    if (wordCountNode) wordCountNode.textContent = String(words);
+    if (questionCountNode) questionCountNode.textContent = String(questionCount);
+}
+
+function syncAiAssessmentLengthDisplay() {
+    const { wordCount: wordCountNode, questionCount: questionCountNode } = getAiModalElements();
+    if (wordCountNode) wordCountNode.textContent = String(aiAssessmentState.wordCount || 0);
+    if (questionCountNode) questionCountNode.textContent = String(aiAssessmentState.questionCount || 3);
+}
+
+function normalizeGeneratedQuestions(rawQuestions) {
+    if (!Array.isArray(rawQuestions)) return [];
+
+    return rawQuestions
+        .map((item, index) => {
+            if (!item || typeof item !== 'object') return null;
+            const prompt = String(item.prompt || item.question || '').trim();
+            if (!prompt) return null;
+            const type = String(item.type || item.kind || 'short_answer').toLowerCase();
+            const choices = Array.isArray(item.choices || item.options)
+                ? (item.choices || item.options).map(value => String(value || '').trim()).filter(Boolean).slice(0, 6)
+                : [];
+
+            return {
+                id: String(item.id || `q${index + 1}`),
+                prompt,
+                type,
+                choices,
+                expectedAnswer: String(item.expectedAnswer || item.answer || '').trim()
+            };
+        })
+        .filter(Boolean);
+}
+
+function getSavedAiQuizForTopic(topic) {
+    if (!topic || !topic.lastAiQuiz || typeof topic.lastAiQuiz !== 'object') return null;
+    const questions = normalizeGeneratedQuestions(topic.lastAiQuiz.questions || []);
+    if (questions.length === 0) return null;
+    const material = String(topic.lastAiQuiz.material || '').trim();
+
+    const questionCount = Math.max(3, Math.min(25, Number(topic.lastAiQuiz.questionCount) || questions.length));
+    return {
+        generatedAt: String(topic.lastAiQuiz.generatedAt || ''),
+        material,
+        wordCount: Math.max(0, Number(topic.lastAiQuiz.wordCount) || getWordCountFromMaterial(material)),
+        questionCount,
+        questions: questions.slice(0, questionCount)
+    };
+}
+
+function renderAiAssessmentQuestions() {
+    const { questionWrap, questionList, gradeBtn, resultWrap } = getAiModalElements();
+    if (!questionWrap || !questionList) return;
+
+    if (!Array.isArray(aiAssessmentState.questions) || aiAssessmentState.questions.length === 0) {
+        questionWrap.classList.add('hidden');
+        questionList.innerHTML = '';
+        if (resultWrap) resultWrap.classList.add('hidden');
+        return;
+    }
+
+    questionList.innerHTML = aiAssessmentState.questions.map((question, index) => {
+        const choices = Array.isArray(question.choices) ? question.choices : [];
+        const choicesMarkup = choices.length > 0
+            ? `
+                <div class="mt-2 space-y-2">
+                    ${choices.map((choice, optionIndex) => `
+                        <label class="flex items-start gap-2 text-sm text-slate-700">
+                            <input type="radio" name="aiAssessQ${index}" value="${escapeHtml(choice)}" class="mt-1">
+                            <span>${escapeHtml(choice)}</span>
+                        </label>
+                    `).join('')}
+                </div>
+            `
+            : `
+                <textarea id="aiAssessAnswer${index}" rows="3" placeholder="Type your answer..."
+                    class="mt-2 w-full p-2.5 rounded-lg border border-slate-200 focus:ring-2 focus:ring-indigo-500 outline-none text-sm"></textarea>
+            `;
+
+        return `
+            <div class="rounded-xl border border-slate-100 bg-slate-50 p-3">
+                <div class="text-xs text-slate-400 font-semibold mb-1">Q${index + 1}</div>
+                <div class="text-sm text-slate-800">${escapeHtml(question.prompt)}</div>
+                ${choicesMarkup}
+            </div>
+        `;
+    }).join('');
+
+    questionWrap.classList.remove('hidden');
+    if (resultWrap) resultWrap.classList.add('hidden');
+    if (gradeBtn) gradeBtn.disabled = false;
+}
+
+function collectAiAssessmentAnswers() {
+    return aiAssessmentState.questions.map((question, index) => {
+        const choices = Array.isArray(question.choices) ? question.choices : [];
+        let answer = '';
+        if (choices.length > 0) {
+            const selected = document.querySelector(`input[name="aiAssessQ${index}"]:checked`);
+            answer = selected ? String(selected.value || '').trim() : '';
+        } else {
+            const textArea = document.getElementById(`aiAssessAnswer${index}`);
+            answer = textArea ? String(textArea.value || '').trim() : '';
+        }
+        return {
+            questionId: question.id,
+            answer
+        };
+    });
+}
+
+async function invokeAiAssessmentFunction(functionName, payload) {
+    if (supabase && supabase.functions && typeof supabase.functions.invoke === 'function') {
+        const { data, error } = await supabase.functions.invoke(functionName, { body: payload });
+        if (error) throw new Error(error.message || `Function ${functionName} failed.`);
+        return data;
+    }
+
+    if (SUPABASE_URL && SUPABASE_ANON_KEY) {
+        const response = await fetch(`${SUPABASE_URL}/functions/v1/${functionName}`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'apikey': SUPABASE_ANON_KEY,
+                'Authorization': `Bearer ${SUPABASE_ANON_KEY}`
+            },
+            body: JSON.stringify(payload)
+        });
+        const data = await response.json().catch(() => null);
+        if (!response.ok) {
+            throw new Error(String(data?.error || data?.message || `${functionName} failed (${response.status})`));
+        }
+        return data;
+    }
+
+    throw new Error('Cloud AI service is not configured. Add Supabase config and deploy AI Edge Functions.');
+}
+
+function openAiAssessment(topicId) {
+    const topic = topics.find(item => item.id === topicId);
+    if (!topic) return;
+
+    const {
+        modal,
+        topicName,
+        materialInput,
+        questionWrap,
+        resultWrap,
+        questionList,
+        generateBtn,
+        regenerateBtn,
+        gradeBtn,
+        applyBtn,
+        score,
+        suggestion,
+        feedback
+    } = getAiModalElements();
+    if (!modal || !materialInput) return;
+
+    aiAssessmentState = {
+        topicId: topic.id,
+        material: '',
+        wordCount: 0,
+        questionCount: 3,
+        questions: [],
+        result: null
+    };
+
+    if (topicName) topicName.textContent = topic.name;
+    materialInput.value = '';
+    if (questionList) questionList.innerHTML = '';
+    if (questionWrap) questionWrap.classList.add('hidden');
+    if (resultWrap) resultWrap.classList.add('hidden');
+    if (score) score.textContent = '--';
+    if (suggestion) suggestion.textContent = '--';
+    if (feedback) feedback.textContent = '';
+    if (generateBtn) generateBtn.disabled = false;
+    if (regenerateBtn) regenerateBtn.disabled = false;
+    if (gradeBtn) gradeBtn.disabled = false;
+    if (applyBtn) applyBtn.disabled = false;
+
+    const savedQuiz = getSavedAiQuizForTopic(topic);
+    if (savedQuiz) {
+        aiAssessmentState.material = savedQuiz.material;
+        aiAssessmentState.wordCount = savedQuiz.wordCount;
+        aiAssessmentState.questionCount = savedQuiz.questions.length;
+        aiAssessmentState.questions = savedQuiz.questions;
+        materialInput.value = savedQuiz.material || '';
+        renderAiAssessmentQuestions();
+        syncAiAssessmentLengthDisplay();
+        setAiAssessmentQuestionActionMode('regenerate');
+        setAiAssessmentStatus('Loaded existing quiz. Use Regenerate Quiz only if you want a new one.', 'green');
+    } else {
+        updateAiAssessmentLengthInfo();
+        setAiAssessmentQuestionActionMode('generate');
+        setAiAssessmentStatus('Paste material to generate AI questions.', 'slate');
+    }
+
+    modal.classList.remove('hidden');
+    materialInput.focus();
+    trackClarityEvent('ai_assess_opened');
+}
+
+function closeAiAssessmentModal() {
+    const { modal } = getAiModalElements();
+    if (!modal) return;
+    modal.classList.add('hidden');
+    aiAssessmentState = {
+        topicId: null,
+        material: '',
+        wordCount: 0,
+        questionCount: 3,
+        questions: [],
+        result: null
+    };
+    setAiAssessmentQuestionActionMode('generate');
+}
+
+async function generateAiAssessmentQuestions(forceRegenerate = false) {
+    const {
+        generateBtn,
+        regenerateBtn,
+        gradeBtn,
+        applyBtn,
+        resultWrap
+    } = getAiModalElements();
+
+    const topic = topics.find(item => item.id === aiAssessmentState.topicId);
+    if (!topic) {
+        setAiAssessmentStatus('Topic not found.', 'red');
+        return;
+    }
+
+    const savedQuiz = getSavedAiQuizForTopic(topic);
+    if (!forceRegenerate && savedQuiz) {
+        aiAssessmentState.material = savedQuiz.material;
+        aiAssessmentState.wordCount = savedQuiz.wordCount;
+        aiAssessmentState.questionCount = savedQuiz.questions.length;
+        aiAssessmentState.questions = savedQuiz.questions;
+        aiAssessmentState.result = null;
+        const { materialInput } = getAiModalElements();
+        if (materialInput) materialInput.value = savedQuiz.material || '';
+        renderAiAssessmentQuestions();
+        syncAiAssessmentLengthDisplay();
+        setAiAssessmentQuestionActionMode('regenerate');
+        setAiAssessmentStatus('Loaded existing quiz. Use Regenerate Quiz only if you want a new one.', 'green');
+        return;
+    }
+
+    updateAiAssessmentLengthInfo();
+    if (aiAssessmentState.wordCount < 30) {
+        setAiAssessmentStatus('Add a little more material (at least ~30 words).', 'amber');
+        return;
+    }
+
+    try {
+        if (generateBtn) generateBtn.disabled = true;
+        if (regenerateBtn) regenerateBtn.disabled = true;
+        if (gradeBtn) gradeBtn.disabled = true;
+        if (applyBtn) applyBtn.disabled = true;
+        if (resultWrap) resultWrap.classList.add('hidden');
+        setAiAssessmentStatus('Generating questions with AI...', 'indigo');
+
+        const response = await invokeAiAssessmentFunction(AI_GENERATE_FUNCTION, {
+            topicId: topic.id,
+            topicName: topic.name,
+            material: aiAssessmentState.material,
+            wordCount: aiAssessmentState.wordCount,
+            questionCount: aiAssessmentState.questionCount
+        });
+
+        const questions = normalizeGeneratedQuestions(response?.questions || response);
+        if (questions.length === 0) {
+            throw new Error('AI did not return usable questions.');
+        }
+
+        aiAssessmentState.questions = questions.slice(0, aiAssessmentState.questionCount);
+        aiAssessmentState.questionCount = aiAssessmentState.questions.length;
+        aiAssessmentState.result = null;
+        topic.lastAiQuiz = {
+            generatedAt: new Date().toISOString(),
+            material: aiAssessmentState.material,
+            wordCount: aiAssessmentState.wordCount,
+            questionCount: aiAssessmentState.questions.length,
+            questions: aiAssessmentState.questions
+        };
+        save();
+        renderAiAssessmentQuestions();
+        syncAiAssessmentLengthDisplay();
+        setAiAssessmentQuestionActionMode('regenerate');
+        setAiAssessmentStatus(`Generated ${aiAssessmentState.questions.length} questions. Answer all and grade.`, 'green');
+        trackClarityEvent('ai_assess_questions_generated');
+    } catch (error) {
+        console.error(error);
+        setAiAssessmentStatus(
+            `${error.message || 'Question generation failed.'} Deploy Edge Function: ${AI_GENERATE_FUNCTION}.`,
+            'red'
+        );
+    } finally {
+        if (generateBtn) generateBtn.disabled = false;
+        if (regenerateBtn) regenerateBtn.disabled = false;
+        if (gradeBtn) gradeBtn.disabled = false;
+        if (applyBtn) applyBtn.disabled = false;
+    }
+}
+
+function regenerateAiAssessmentQuestions() {
+    return generateAiAssessmentQuestions(true);
+}
+
+async function gradeAiAssessmentAnswers() {
+    const {
+        gradeBtn,
+        regenerateBtn,
+        applyBtn,
+        resultWrap,
+        score: scoreNode,
+        suggestion: suggestionNode,
+        feedback: feedbackNode
+    } = getAiModalElements();
+
+    if (!Array.isArray(aiAssessmentState.questions) || aiAssessmentState.questions.length === 0) {
+        setAiAssessmentStatus('Generate questions first.', 'amber');
+        return;
+    }
+
+    const topic = topics.find(item => item.id === aiAssessmentState.topicId);
+    if (!topic) {
+        setAiAssessmentStatus('Topic not found.', 'red');
+        return;
+    }
+
+    const answers = collectAiAssessmentAnswers();
+    const unanswered = answers.filter(item => !item.answer).length;
+    if (unanswered > 0) {
+        setAiAssessmentStatus(`Please answer all questions (${unanswered} remaining).`, 'amber');
+        return;
+    }
+
+    try {
+        if (gradeBtn) gradeBtn.disabled = true;
+        if (regenerateBtn) regenerateBtn.disabled = true;
+        if (applyBtn) applyBtn.disabled = true;
+        setAiAssessmentStatus('Evaluating your answers...', 'indigo');
+
+        const response = await invokeAiAssessmentFunction(AI_GRADE_FUNCTION, {
+            topicId: topic.id,
+            topicName: topic.name,
+            material: aiAssessmentState.material,
+            wordCount: aiAssessmentState.wordCount,
+            questionCount: aiAssessmentState.questions.length,
+            questions: aiAssessmentState.questions,
+            answers
+        });
+
+        const numericScore = Number(response?.score);
+        const score = Number.isFinite(numericScore) ? Math.max(0, Math.min(100, numericScore)) : 0;
+        const suggestedDifficulty = normalizeDifficultyLabel(response?.recommendedDifficulty || response?.difficulty) || scoreToDifficulty(score);
+        const feedback = String(response?.feedback || response?.summary || '').trim();
+
+        aiAssessmentState.result = {
+            score,
+            suggestedDifficulty,
+            feedback
+        };
+
+        if (scoreNode) scoreNode.textContent = `${Math.round(score)}%`;
+        if (suggestionNode) suggestionNode.textContent = difficultyToReadableLabel(suggestedDifficulty);
+        if (feedbackNode) {
+            feedbackNode.textContent = feedback || 'AI completed grading. Apply this result to update schedule.';
+        }
+        if (resultWrap) resultWrap.classList.remove('hidden');
+        setAiAssessmentStatus('Assessment complete. Apply result to schedule.', 'green');
+        trackClarityEvent('ai_assess_graded');
+    } catch (error) {
+        console.error(error);
+        setAiAssessmentStatus(
+            `${error.message || 'Grading failed.'} Deploy Edge Function: ${AI_GRADE_FUNCTION}.`,
+            'red'
+        );
+    } finally {
+        if (gradeBtn) gradeBtn.disabled = false;
+        if (regenerateBtn) regenerateBtn.disabled = false;
+        if (applyBtn) applyBtn.disabled = false;
+    }
+}
+
+function applyAiAssessmentResult() {
+    const topic = topics.find(item => item.id === aiAssessmentState.topicId);
+    const result = aiAssessmentState.result;
+    if (!topic || !result) {
+        setAiAssessmentStatus('Grade answers first.', 'amber');
+        return;
+    }
+
+    topic.lastAiAssessment = {
+        date: new Date().toISOString(),
+        score: Math.round(result.score),
+        suggestedDifficulty: result.suggestedDifficulty,
+        wordCount: aiAssessmentState.wordCount,
+        questionCount: aiAssessmentState.questions.length
+    };
+
+    completeTopic(topic.id, result.suggestedDifficulty);
+    setClarityTag('last_ai_assessment_score', Math.round(result.score));
+    trackClarityEvent('ai_assess_applied');
+    closeAiAssessmentModal();
+}
+
 function completeTopic(id, difficulty) {
     const topic = topics.find(t => t.id === id);
     if (!topic) return;
@@ -650,6 +1160,7 @@ function render() {
                     <button onclick="completeTopic(${topic.id}, 'hard')" class="px-3 py-2 text-xs font-bold rounded-lg border border-red-200 text-red-600 hover:bg-red-50">Struggled</button>
                     <button onclick="completeTopic(${topic.id}, 'medium')" class="px-3 py-2 text-xs font-bold rounded-lg border border-amber-200 text-amber-600 hover:bg-amber-50">Okay</button>
                     <button onclick="completeTopic(${topic.id}, 'easy')" class="px-4 py-2 text-xs font-bold bg-green-600 text-white rounded-lg hover:bg-green-700">Mastered</button>
+                    <button onclick="openAiAssessment(${topic.id})" class="px-3 py-2 text-xs font-bold rounded-lg border border-indigo-200 text-indigo-700 hover:bg-indigo-50">Assess with AI</button>
                 </div>`;
             agendaList.appendChild(card);
         } else { hasOverflow = true; }
@@ -743,6 +1254,18 @@ function importData(event) {
     };
     reader.readAsText(event.target.files[0]);
 }
+
+const aiAssessMaterialInput = document.getElementById('aiAssessMaterialInput');
+if (aiAssessMaterialInput) {
+    aiAssessMaterialInput.addEventListener('input', updateAiAssessmentLengthInfo);
+}
+document.addEventListener('keydown', (event) => {
+    if (event.key !== 'Escape') return;
+    const { modal } = getAiModalElements();
+    if (modal && !modal.classList.contains('hidden')) {
+        closeAiAssessmentModal();
+    }
+});
 
 initRouting();
 render();

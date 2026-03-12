@@ -215,6 +215,76 @@ function normalizeTopics(raw) {
             const normalizedInLearning = typeof item.inLearning === 'boolean'
                 ? item.inLearning
                 : (Math.max(0, Number(item.reviewCount) || 0) === 0);
+            const rawLastAiAssessment = (item.lastAiAssessment && typeof item.lastAiAssessment === 'object')
+                ? item.lastAiAssessment
+                : null;
+            const lastAiAssessmentDateRaw = String(rawLastAiAssessment?.date || '').trim();
+            const lastAiAssessmentDate = Number.isNaN(new Date(lastAiAssessmentDateRaw).getTime())
+                ? null
+                : new Date(lastAiAssessmentDateRaw).toISOString();
+            const lastAiAssessmentScore = Math.max(0, Math.min(100, Number(rawLastAiAssessment?.score) || 0));
+            const lastAiAssessmentDifficultyRaw = String(rawLastAiAssessment?.suggestedDifficulty || '').toLowerCase().trim();
+            const lastAiAssessmentDifficulty = (
+                lastAiAssessmentDifficultyRaw === 'easy' || lastAiAssessmentDifficultyRaw === 'mastered'
+            )
+                ? 'easy'
+                : (lastAiAssessmentDifficultyRaw === 'hard' || lastAiAssessmentDifficultyRaw === 'struggled')
+                    ? 'hard'
+                    : 'medium';
+            const lastAiAssessmentWordCount = Math.max(0, Number(rawLastAiAssessment?.wordCount) || 0);
+            const lastAiAssessmentQuestionCount = Math.max(0, Number(rawLastAiAssessment?.questionCount) || 0);
+            const normalizedLastAiAssessment = lastAiAssessmentDate
+                ? {
+                    date: lastAiAssessmentDate,
+                    score: lastAiAssessmentScore,
+                    suggestedDifficulty: lastAiAssessmentDifficulty,
+                    wordCount: lastAiAssessmentWordCount,
+                    questionCount: lastAiAssessmentQuestionCount
+                }
+                : null;
+            const rawLastAiQuiz = (item.lastAiQuiz && typeof item.lastAiQuiz === 'object')
+                ? item.lastAiQuiz
+                : null;
+            const lastAiQuizGeneratedAtRaw = String(rawLastAiQuiz?.generatedAt || '').trim();
+            const lastAiQuizGeneratedAt = Number.isNaN(new Date(lastAiQuizGeneratedAtRaw).getTime())
+                ? null
+                : new Date(lastAiQuizGeneratedAtRaw).toISOString();
+            const normalizedLastAiQuizQuestions = Array.isArray(rawLastAiQuiz?.questions)
+                ? rawLastAiQuiz.questions
+                    .map((question, index) => {
+                        if (!question || typeof question !== 'object') return null;
+                        const prompt = String(question.prompt || question.question || '').trim();
+                        if (!prompt) return null;
+                        const choices = Array.isArray(question.choices || question.options)
+                            ? (question.choices || question.options)
+                                .map(value => String(value || '').trim())
+                                .filter(Boolean)
+                                .slice(0, 6)
+                            : [];
+                        return {
+                            id: String(question.id || `q${index + 1}`),
+                            prompt,
+                            type: String(question.type || 'short_answer').toLowerCase(),
+                            choices,
+                            expectedAnswer: String(question.expectedAnswer || question.answer || '').trim().slice(0, 1000)
+                        };
+                    })
+                    .filter(Boolean)
+                    .slice(0, 25)
+                : [];
+            const normalizedLastAiQuizQuestionCount = Math.max(
+                3,
+                Math.min(25, Number(rawLastAiQuiz?.questionCount) || normalizedLastAiQuizQuestions.length || 3)
+            );
+            const normalizedLastAiQuiz = normalizedLastAiQuizQuestions.length > 0
+                ? {
+                    generatedAt: lastAiQuizGeneratedAt || new Date().toISOString(),
+                    material: String(rawLastAiQuiz?.material || '').trim().slice(0, 50000),
+                    wordCount: Math.max(0, Number(rawLastAiQuiz?.wordCount) || 0),
+                    questionCount: normalizedLastAiQuizQuestionCount,
+                    questions: normalizedLastAiQuizQuestions.slice(0, normalizedLastAiQuizQuestionCount)
+                }
+                : null;
 
             return {
                 id: Number(item.id) || Date.now() + Math.floor(Math.random() * 1000),
@@ -232,6 +302,8 @@ function normalizeTopics(raw) {
                 recentReviewHistory: normalizedReviewHistory,
                 inLearning: normalizedInLearning && normalizedLearningStep < maxLearningStep,
                 learningStep: normalizedLearningStep,
+                lastAiAssessment: normalizedLastAiAssessment,
+                lastAiQuiz: normalizedLastAiQuiz,
                 categories: normalizeCategoryList(item.categories || item.category || [])
             };
         })

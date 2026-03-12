@@ -127,3 +127,77 @@ git push
 - The same email account can be used on any device/browser to load topics and activity stats.
 - Missing `activity_log` column is handled with a topics-only fallback, but you should still run the SQL above so analytics data syncs fully.
 - Spaced-repetition fields (like `ease`, `lapses`, `recentOutcomes`) are stored inside each topic JSON object, so no extra table columns are required.
+
+## 8. Enable AI understanding checks (optional)
+
+The app has an `Assess with AI` option on due topics. It uses these Supabase Edge Functions from this repository:
+
+- `ai-generate-quiz` - generates questions from pasted material
+- `ai-grade-quiz` - grades answers and returns score/recommended difficulty
+
+### A. Set required secrets
+
+From the project root:
+
+```bash
+supabase secrets set OPENAI_API_KEY=your_openai_api_key
+supabase secrets set OPENAI_MODEL=gpt-4.1-mini
+```
+
+Optional (only if you use a non-default OpenAI-compatible endpoint):
+
+```bash
+supabase secrets set OPENAI_BASE_URL=https://your-provider.example/v1
+```
+
+### B. Deploy both Edge Functions
+
+```bash
+supabase functions deploy ai-generate-quiz
+supabase functions deploy ai-grade-quiz
+```
+
+If this is your first deploy on this machine, run `supabase login` and `supabase link --project-ref <YOUR_PROJECT_REF>` first.
+
+### C. Function input contracts
+
+- `ai-generate-quiz` receives:
+  - `topicId`, `topicName`
+  - `material`
+  - `wordCount`
+  - `questionCount`
+- `ai-grade-quiz` receives:
+  - `topicId`, `topicName`
+  - `material`, `wordCount`, `questionCount`
+  - `questions`
+  - `answers`
+
+### D. Question count rule (frontend)
+
+Question count is based only on material length (not time spent):
+
+`question_count = clamp(ceil(word_count / 220), 3, 25)`
+
+### E. Response shape used by the app
+
+- `ai-generate-quiz` should return `questions` array, each item with:
+  - `id`
+  - `prompt`
+  - `type` (`short_answer` or `multiple_choice`)
+  - optional `choices`
+  - optional `expectedAnswer`
+- `ai-grade-quiz` should return:
+  - `score` (`0-100`)
+  - `recommendedDifficulty` (`hard|medium|easy`)
+  - `feedback`
+
+### F. Runtime behavior in the app
+
+- Once a quiz is generated for a topic, it is reused by default.
+- The app only regenerates when the user clicks `Regenerate Quiz`.
+- The saved quiz includes source material so grading works when reopening the same topic later.
+
+### G. Notes
+
+- Keep model/API keys inside Edge Functions only (never frontend).
+- If functions are missing or secrets are not set, the app shows an error with the function name to deploy.
