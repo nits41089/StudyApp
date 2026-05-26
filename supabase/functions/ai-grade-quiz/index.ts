@@ -8,6 +8,10 @@ type QuizQuestion = {
     type?: string;
     choices?: string[];
     expectedAnswer?: string;
+    language?: string;
+    starterCode?: string;
+    testCases?: string;
+    constraints?: string;
 };
 
 type QuizAnswer = {
@@ -60,7 +64,11 @@ function normalizeQuestions(raw: unknown): QuizQuestion[] {
                     (item as Record<string, unknown>).expectedAnswer ||
                     (item as Record<string, unknown>).answer ||
                     ''
-                ).trim()
+                ).trim(),
+                language: String((item as Record<string, unknown>).language || '').toLowerCase().trim(),
+                starterCode: String((item as Record<string, unknown>).starterCode || '').trim(),
+                testCases: String((item as Record<string, unknown>).testCases || '').trim(),
+                constraints: String((item as Record<string, unknown>).constraints || '').trim()
             };
         })
         .filter((item): item is QuizQuestion => Boolean(item));
@@ -116,7 +124,7 @@ serve(async (req) => {
             properties: {
                 score: { type: 'number', minimum: 0, maximum: 100 },
                 recommendedDifficulty: { type: 'string', enum: ['hard', 'medium', 'easy'] },
-                feedback: { type: 'string', minLength: 5, maxLength: 1000 },
+                feedback: { type: 'string', minLength: 5, maxLength: 2000 },
                 perQuestion: {
                     type: 'array',
                     minItems: questions.length,
@@ -128,7 +136,7 @@ serve(async (req) => {
                         properties: {
                             questionId: { type: 'string', minLength: 1 },
                             awarded: { type: 'number', minimum: 0, maximum: 1 },
-                            comment: { type: 'string', minLength: 1, maxLength: 300 }
+                            comment: { type: 'string', minLength: 1, maxLength: 500 }
                         }
                     }
                 }
@@ -141,18 +149,29 @@ serve(async (req) => {
             type: question.type || 'short_answer',
             choices: question.choices || [],
             expectedAnswer: question.expectedAnswer || null,
-            userAnswer: answerMap.get(question.id) || ''
+            userAnswer: answerMap.get(question.id) || '',
+            ...(question.type === 'code_challenge' && {
+                language: question.language,
+                testCases: question.testCases,
+                constraints: question.constraints
+            })
         }));
 
         const systemPrompt = [
-            'You are grading a study quiz.',
-            'Be strict but fair.',
+            'You are grading a study quiz including code challenges.',
+            'Be strict but fair. For code, evaluate correctness, edge cases, and code quality.',
             'Use material and expectedAnswer when available.',
             'If material is missing, use question context and expectedAnswer to grade.',
+            'For code_challenge questions:',
+            '  - Award 1.0 if code is correct, handles edge cases, and follows best practices.',
+            '  - Award 0.7-0.9 if code works but has minor issues or inefficiencies.',
+            '  - Award 0.3-0.6 if code has logical errors or misses edge cases.',
+            '  - Award 0 if code doesn\'t compile or completely fails.',
+            '  - In comment, explain correctness, edge case handling, and code quality.',
             'Awarded score per question is 0 to 1.',
             'Final score is overall percent 0-100.',
             'Difficulty mapping guidance:',
-            '- easy for strong mastery',
+            '- easy for strong mastery (code quality + correctness)',
             '- medium for partial understanding',
             '- hard for weak understanding'
         ].join(' ');
@@ -164,7 +183,7 @@ serve(async (req) => {
                 : 'Reference material: not provided',
             '',
             'Questions and user answers:',
-            JSON.stringify(promptQuestions)
+            JSON.stringify(promptQuestions, null, 2)
         ].join('\n');
 
         const graded = await callOpenAiForJson<GradeQuizResponse>({

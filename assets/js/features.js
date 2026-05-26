@@ -219,7 +219,11 @@ function normalizeGeneratedQuestions(rawQuestions) {
                 prompt,
                 type,
                 choices,
-                expectedAnswer: String(item.expectedAnswer || item.answer || '').trim()
+                expectedAnswer: String(item.expectedAnswer || item.answer || '').trim(),
+                language: String(item.language || '').toLowerCase().trim(),
+                starterCode: String(item.starterCode || '').trim(),
+                testCases: String(item.testCases || '').trim(),
+                constraints: String(item.constraints || '').trim()
             };
         })
         .filter(Boolean);
@@ -254,6 +258,44 @@ function renderAiAssessmentQuestions() {
 
     questionList.innerHTML = aiAssessmentState.questions.map((question, index) => {
         const choices = Array.isArray(question.choices) ? question.choices : [];
+        const isCodeChallenge = question.type === 'code_challenge';
+        
+        if (isCodeChallenge) {
+            const language = question.language || 'python';
+            const starterCode = question.starterCode || '# Write your code here';
+            const testCases = question.testCases || 'No test cases provided';
+            const constraints = question.constraints || '';
+            
+            return `
+                <div class="rounded-xl border border-slate-100 bg-slate-50 p-3">
+                    <div class="text-xs text-slate-400 font-semibold mb-1">Q${index + 1} · Code Challenge</div>
+                    <div class="text-sm text-slate-800 mb-3">${escapeHtml(question.prompt)}</div>
+                    
+                    <div class="bg-white rounded-lg border border-slate-200 p-3 mb-2">
+                        <div class="text-xs font-semibold text-slate-600 mb-2">Language: <span class="text-indigo-600">${escapeHtml(language.toUpperCase())}</span></div>
+                        <div class="mb-3">
+                            <div class="text-xs font-semibold text-slate-600 mb-1">Starter Code:</div>
+                            <pre class="bg-slate-900 text-slate-100 p-2 rounded text-xs overflow-x-auto"><code class="language-${escapeHtml(language)}">${escapeHtml(starterCode)}</code></pre>
+                        </div>
+                    </div>
+                    
+                    <div class="bg-blue-50 border border-blue-200 rounded-lg p-2 mb-2 text-xs">
+                        <div class="font-semibold text-blue-900 mb-1">Test Cases:</div>
+                        <div class="text-blue-800 whitespace-pre-wrap font-mono text-xs">${escapeHtml(testCases)}</div>
+                    </div>
+                    
+                    ${constraints ? `<div class="text-xs text-slate-600 mb-2"><strong>Constraints:</strong> ${escapeHtml(constraints)}</div>` : ''}
+                    
+                    <div class="mb-2">
+                        <label class="text-xs font-semibold text-slate-600 block mb-1">Your Code:</label>
+                        <textarea id="aiAssessCodeAnswer${index}" data-language="${escapeHtml(language)}" 
+                            class="w-full p-2.5 rounded-lg border border-slate-300 focus:ring-2 focus:ring-indigo-500 outline-none text-xs font-mono bg-slate-900 text-slate-100"
+                            rows="10" placeholder="Write your solution here...">${escapeHtml(starterCode)}</textarea>
+                    </div>
+                </div>
+            `;
+        }
+        
         const choicesMarkup = choices.length > 0
             ? `
                 <div class="mt-2 space-y-2">
@@ -282,13 +324,26 @@ function renderAiAssessmentQuestions() {
     questionWrap.classList.remove('hidden');
     if (resultWrap) resultWrap.classList.add('hidden');
     if (gradeBtn) gradeBtn.disabled = false;
+    
+    // Apply syntax highlighting to code blocks
+    setTimeout(() => {
+        document.querySelectorAll('pre code').forEach(block => {
+            if (window.hljs) {
+                window.hljs.highlightElement(block);
+            }
+        });
+    }, 100);
 }
 
 function collectAiAssessmentAnswers() {
     return aiAssessmentState.questions.map((question, index) => {
         const choices = Array.isArray(question.choices) ? question.choices : [];
         let answer = '';
-        if (choices.length > 0) {
+        
+        if (question.type === 'code_challenge') {
+            const codeArea = document.getElementById(`aiAssessCodeAnswer${index}`);
+            answer = codeArea ? String(codeArea.value || '').trim() : '';
+        } else if (choices.length > 0) {
             const selected = document.querySelector(`input[name="aiAssessQ${index}"]:checked`);
             answer = selected ? String(selected.value || '').trim() : '';
         } else {

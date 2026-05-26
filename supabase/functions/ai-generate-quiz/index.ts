@@ -5,9 +5,13 @@ import { corsHeaders, errorResponse, jsonResponse } from '../_shared/cors.ts';
 type GeneratedQuestion = {
     id: string;
     prompt: string;
-    type: 'short_answer' | 'multiple_choice';
+    type: 'short_answer' | 'multiple_choice' | 'code_challenge';
     choices?: string[];
     expectedAnswer?: string;
+    language?: string;
+    starterCode?: string;
+    testCases?: string;
+    constraints?: string;
 };
 
 type GenerateQuizResponse = {
@@ -54,18 +58,30 @@ function sanitizeQuestions(raw: unknown, count: number): GeneratedQuestion[] {
                     .slice(0, 5)
                 : [];
 
-            const type: 'short_answer' | 'multiple_choice' = (
-                typeRaw === 'multiple_choice' && choices.length >= 2
-            )
-                ? 'multiple_choice'
-                : 'short_answer';
+            const language = String((item as Record<string, unknown>).language || '').toLowerCase().trim();
+            const starterCode = String((item as Record<string, unknown>).starterCode || '').trim();
+            const testCases = String((item as Record<string, unknown>).testCases || '').trim();
+            const constraints = String((item as Record<string, unknown>).constraints || '').trim();
+
+            let type: 'short_answer' | 'multiple_choice' | 'code_challenge';
+            if (typeRaw === 'code_challenge' && language && starterCode) {
+                type = 'code_challenge';
+            } else if (typeRaw === 'multiple_choice' && choices.length >= 2) {
+                type = 'multiple_choice';
+            } else {
+                type = 'short_answer';
+            }
 
             return {
                 id: String((item as Record<string, unknown>).id || `q${index + 1}`),
                 prompt,
                 type,
                 choices: type === 'multiple_choice' ? choices : [],
-                expectedAnswer: String((item as Record<string, unknown>).expectedAnswer || '').trim()
+                expectedAnswer: String((item as Record<string, unknown>).expectedAnswer || '').trim(),
+                language: type === 'code_challenge' ? language : undefined,
+                starterCode: type === 'code_challenge' ? starterCode : undefined,
+                testCases: type === 'code_challenge' ? testCases : undefined,
+                constraints: type === 'code_challenge' ? constraints : undefined
             };
         })
         .filter((value): value is GeneratedQuestion => Boolean(value))
@@ -109,18 +125,22 @@ serve(async (req) => {
                     items: {
                         type: 'object',
                         additionalProperties: false,
-                        required: ['id', 'prompt', 'type', 'choices', 'expectedAnswer'],
+                        required: ['id', 'prompt', 'type'],
                         properties: {
                             id: { type: 'string', minLength: 1 },
                             prompt: { type: 'string', minLength: 5 },
-                            type: { type: 'string', enum: ['short_answer', 'multiple_choice'] },
+                            type: { type: 'string', enum: ['short_answer', 'multiple_choice', 'code_challenge'] },
                             choices: {
                                 type: 'array',
                                 items: { type: 'string' },
                                 minItems: 0,
                                 maxItems: 5
                             },
-                            expectedAnswer: { type: 'string', minLength: 1 }
+                            expectedAnswer: { type: 'string', minLength: 0 },
+                            language: { type: 'string', enum: ['python', 'javascript', 'java', 'csharp'] },
+                            starterCode: { type: 'string', minLength: 10 },
+                            testCases: { type: 'string', minLength: 10 },
+                            constraints: { type: 'string', minLength: 0 }
                         }
                     }
                 }
@@ -134,16 +154,22 @@ serve(async (req) => {
             'Return exactly the requested number of questions.',
             'Each question must test understanding, not trivia.',
             'For multiple_choice, include 3-4 options and one clearly correct expectedAnswer.',
-            'For short_answer, expectedAnswer should be concise and gradable.'
+            'For short_answer, expectedAnswer should be concise and gradable.',
+            'For code_challenge, generate algorithmic problems (5-15% of quiz):',
+            '  - Include starterCode with function signature and comments.',
+            '  - Provide testCases as format: input1->expected_output1; input2->expected_output2',
+            '  - Set constraints (time/space complexity hints).',
+            '  - Pick language from: python, javascript, java, csharp'
         ].join(' ');
 
         const userPrompt = [
             `Topic: ${topicName || 'Untitled topic'}`,
             `Target question count: ${questionCount}`,
             'Generate a balanced quiz:',
-            '- around 35-45% multiple_choice, rest short_answer',
-            '- no duplicate prompts',
-            '- clear wording for beginners',
+            '- Around 30-40% multiple_choice, 50-60% short_answer, 5-15% code_challenge',
+            '- No duplicate prompts',
+            '- Clear wording for beginners',
+            '- For code challenges, starter code must be complete and runnable',
             '',
             'Material:',
             material.slice(0, 18000)

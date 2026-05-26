@@ -19,3 +19,57 @@
         opacity: 1;
     }
 }
+
+/* Code Editor & Syntax Highlighting */
+textarea.code-editor {
+    font-family: 'Courier New', Courier, monospace;
+    font-size: 0.875rem;
+    line-height: 1.5;
+    tab-size: 4;
+}
+
+pre code {
+    display: block;
+    overflow-x: auto;
+    padding: 0.75rem;
+    border-radius: 0.5rem;
+}
+
+.hljs {
+    background: #1e293b !important;
+    color: #e2e8f0 !important;
+}
+
+.hljs-attr,
+.hljs-attribute {
+    color: #93c5fd;
+}
+
+.hljs-keyword {
+    color: #f472b6;
+}
+
+.hljs-literal {
+    color: #fbbf24;
+}
+
+.hljs-number {
+    color: #86efac;
+}
+
+.hljs-string {
+    color: #67e8f9;
+}
+
+.hljs-function {
+    color: #c084fc;
+}
+
+.hljs-comment {
+    color: #64748b;
+}
+
+.code-challenge-section {
+    background: linear-gradient(135deg, #f3f4f6 0%, #e5e7eb 100%);
+    border-left: 4px solid #6366f1;
+}
