@@ -100,6 +100,236 @@ let aiAssessmentState = {
     questions: [],
     result: null
 };
+let aiCodeEditors = new Map();
+let aiCodeCompletionRegistered = false;
+let acePathsConfigured = false;
+const codeTextareaFallbacks = new WeakSet();
+
+const AI_CODE_KEYWORDS = {
+    python: [
+        'and', 'as', 'assert', 'break', 'class', 'continue', 'def', 'del', 'elif', 'else', 'except',
+        'False', 'finally', 'for', 'from', 'if', 'import', 'in', 'is', 'lambda', 'None', 'not',
+        'or', 'pass', 'return', 'True', 'try', 'while', 'with', 'yield', 'range', 'len', 'enumerate',
+        'zip', 'map', 'filter', 'sorted', 'sum', 'min', 'max', 'list', 'dict', 'set', 'tuple',
+        'append', 'pop', 'insert', 'remove', 'split', 'join', 'strip'
+    ],
+    javascript: [
+        'async', 'await', 'break', 'case', 'catch', 'class', 'const', 'continue', 'default', 'do',
+        'else', 'export', 'false', 'finally', 'for', 'function', 'if', 'import', 'let', 'new',
+        'null', 'return', 'switch', 'this', 'throw', 'true', 'try', 'undefined', 'var', 'while',
+        'Array', 'Object', 'Map', 'Set', 'Math', 'Number', 'String', 'Boolean', 'console',
+        'length', 'push', 'pop', 'slice', 'map', 'filter', 'reduce', 'sort', 'includes', 'indexOf'
+    ],
+    java: [
+        'abstract', 'boolean', 'break', 'case', 'catch', 'char', 'class', 'continue', 'default',
+        'double', 'else', 'extends', 'false', 'final', 'finally', 'float', 'for', 'if', 'implements',
+        'import', 'int', 'interface', 'long', 'new', 'null', 'private', 'protected', 'public',
+        'return', 'static', 'String', 'switch', 'this', 'throw', 'throws', 'true', 'try', 'void',
+        'while', 'List', 'ArrayList', 'Map', 'HashMap', 'Set', 'HashSet', 'Arrays', 'Collections'
+    ],
+    csharp: [
+        'abstract', 'as', 'bool', 'break', 'case', 'catch', 'class', 'const', 'continue', 'decimal',
+        'default', 'double', 'else', 'enum', 'false', 'finally', 'float', 'for', 'foreach', 'if',
+        'in', 'int', 'interface', 'is', 'List', 'Dictionary', 'namespace', 'new', 'null', 'object',
+        'private', 'protected', 'public', 'return', 'static', 'string', 'switch', 'this', 'throw',
+        'true', 'try', 'using', 'var', 'void', 'while'
+    ]
+};
+
+function normalizeCodeLanguage(value) {
+    const language = String(value || '').toLowerCase().trim();
+    if (language === 'js' || language === 'javascript') return 'javascript';
+    if (language === 'py' || language === 'python') return 'python';
+    if (language === 'cs' || language === 'c#' || language === 'csharp') return 'csharp';
+    if (language === 'java') return 'java';
+    return 'javascript';
+}
+
+function getAceModeForLanguage(language) {
+    const normalized = normalizeCodeLanguage(language);
+    if (normalized === 'python') return 'ace/mode/python';
+    if (normalized === 'java') return 'ace/mode/java';
+    if (normalized === 'csharp') return 'ace/mode/csharp';
+    return 'ace/mode/javascript';
+}
+
+function configureAcePaths() {
+    if (acePathsConfigured || !window.ace || !window.ace.config) return;
+    const basePath = String(window.ACE_CDN_BASE || '').replace(/\/+$/, '');
+    if (basePath) {
+        window.ace.config.set('basePath', basePath);
+        window.ace.config.set('modePath', basePath);
+        window.ace.config.set('themePath', basePath);
+        window.ace.config.set('workerPath', basePath);
+    }
+    acePathsConfigured = true;
+}
+
+function getAiCodeCompletionWords(language, source) {
+    const normalized = normalizeCodeLanguage(language);
+    const words = new Set(AI_CODE_KEYWORDS[normalized] || []);
+    String(source || '')
+        .match(/[A-Za-z_][A-Za-z0-9_]*/g)
+        ?.forEach(word => {
+            if (word.length > 1) words.add(word);
+        });
+    return [...words].sort((a, b) => a.localeCompare(b));
+}
+
+function registerAiCodeCompleter() {
+    if (aiCodeCompletionRegistered || !window.ace) return;
+    let languageTools = null;
+    try {
+        languageTools = window.ace.require?.('ace/ext/language_tools');
+    } catch (_error) {
+        languageTools = null;
+    }
+    if (!languageTools || typeof languageTools.addCompleter !== 'function') return;
+
+    languageTools.addCompleter({
+        getCompletions(editor, _session, _pos, prefix, callback) {
+            const typed = String(prefix || '').toLowerCase();
+            const sourceWords = Array.isArray(editor.aiCompletionWords) ? editor.aiCompletionWords : [];
+            const completions = sourceWords
+                .filter(word => typed && word.toLowerCase().startsWith(typed) && word.toLowerCase() !== typed)
+                .slice(0, 80)
+                .map(word => ({
+                    caption: word,
+                    value: word,
+                    meta: editor.aiCompletionLanguage || 'code',
+                    score: 500
+                }));
+            callback(null, completions);
+        }
+    });
+    aiCodeCompletionRegistered = true;
+}
+
+function handleCodeTextareaKeydown(event) {
+    if (event.key !== 'Tab') return;
+    event.preventDefault();
+
+    const textarea = event.currentTarget;
+    const indent = '    ';
+    const value = textarea.value;
+    const selectionStart = textarea.selectionStart;
+    const selectionEnd = textarea.selectionEnd;
+    const lineStart = value.lastIndexOf('\n', selectionStart - 1) + 1;
+
+    if (selectionStart !== selectionEnd) {
+        const selected = value.slice(lineStart, selectionEnd);
+        const lines = selected.split('\n');
+        const updatedLines = event.shiftKey
+            ? lines.map(line => line.startsWith(indent) ? line.slice(indent.length) : line.replace(/^\t/, ''))
+            : lines.map(line => `${indent}${line}`);
+        const updated = updatedLines.join('\n');
+        textarea.value = value.slice(0, lineStart) + updated + value.slice(selectionEnd);
+        textarea.selectionStart = lineStart;
+        textarea.selectionEnd = lineStart + updated.length;
+        return;
+    }
+
+    if (event.shiftKey) {
+        const beforeCursor = value.slice(lineStart, selectionStart);
+        if (beforeCursor.endsWith(indent)) {
+            textarea.value = value.slice(0, selectionStart - indent.length) + value.slice(selectionStart);
+            textarea.selectionStart = selectionStart - indent.length;
+            textarea.selectionEnd = selectionStart - indent.length;
+        }
+        return;
+    }
+
+    textarea.value = value.slice(0, selectionStart) + indent + value.slice(selectionEnd);
+    textarea.selectionStart = selectionStart + indent.length;
+    textarea.selectionEnd = selectionStart + indent.length;
+}
+
+function enableCodeTextareaFallback(textarea) {
+    if (!textarea || codeTextareaFallbacks.has(textarea)) return;
+    textarea.classList.add('code-editor');
+    textarea.addEventListener('keydown', handleCodeTextareaKeydown);
+    codeTextareaFallbacks.add(textarea);
+}
+
+function destroyAiCodeEditors() {
+    aiCodeEditors.forEach((editor) => {
+        try {
+            editor.destroy();
+        } catch (_error) {
+            // Ignore stale editor instances after DOM replacement.
+        }
+    });
+    aiCodeEditors.clear();
+}
+
+function initAiCodeEditors() {
+    const codeAreas = document.querySelectorAll('[data-ai-code-answer="true"]');
+    if (!window.ace) {
+        codeAreas.forEach(enableCodeTextareaFallback);
+        return;
+    }
+
+    configureAcePaths();
+    registerAiCodeCompleter();
+
+    codeAreas.forEach((textarea) => {
+        const index = Number(textarea.dataset.questionIndex);
+        if (!Number.isFinite(index) || aiCodeEditors.has(index)) return;
+
+        const language = normalizeCodeLanguage(textarea.dataset.language);
+        const editorHost = document.createElement('div');
+        editorHost.id = `aiAssessCodeEditor${index}`;
+        editorHost.className = 'ai-code-editor';
+        editorHost.setAttribute('aria-label', `Code answer for question ${index + 1}`);
+        textarea.classList.add('hidden');
+        textarea.insertAdjacentElement('afterend', editorHost);
+
+        const editor = window.ace.edit(editorHost);
+        editor.aiCompletionLanguage = language;
+        editor.aiCompletionWords = getAiCodeCompletionWords(language, textarea.value);
+        editor.setTheme('ace/theme/tomorrow_night');
+        editor.session.setMode(getAceModeForLanguage(language));
+        editor.session.setTabSize(4);
+        editor.session.setUseSoftTabs(true);
+        editor.session.setUseWrapMode(true);
+        editor.session.setUseWorker(false);
+        editor.setValue(textarea.value || '', -1);
+        editor.setOptions({
+            animatedScroll: true,
+            autoScrollEditorIntoView: true,
+            behavioursEnabled: true,
+            displayIndentGuides: true,
+            enableBasicAutocompletion: true,
+            enableLiveAutocompletion: true,
+            enableSnippets: true,
+            fadeFoldWidgets: false,
+            fontFamily: 'SFMono-Regular, Consolas, Liberation Mono, Menlo, monospace',
+            fontSize: '13px',
+            highlightActiveLine: true,
+            highlightSelectedWord: true,
+            maxLines: 24,
+            minLines: 10,
+            scrollPastEnd: 0.25,
+            showFoldWidgets: true,
+            showGutter: true,
+            showPrintMargin: false,
+            tabSize: 4,
+            useSoftTabs: true
+        });
+        editor.commands.addCommand({
+            name: 'triggerAutocomplete',
+            bindKey: { win: 'Ctrl-Space|Alt-Space', mac: 'Ctrl-Space|Alt-Space' },
+            exec(activeEditor) {
+                activeEditor.execCommand('startAutocomplete');
+            }
+        });
+        editor.on('change', () => {
+            textarea.value = editor.getValue();
+        });
+        aiCodeEditors.set(index, editor);
+        requestAnimationFrame(() => editor.resize());
+    });
+}
 
 function normalizeDifficultyLabel(value) {
     const normalized = String(value || '').toLowerCase().trim();
@@ -249,6 +479,8 @@ function renderAiAssessmentQuestions() {
     const { questionWrap, questionList, gradeBtn, resultWrap } = getAiModalElements();
     if (!questionWrap || !questionList) return;
 
+    destroyAiCodeEditors();
+
     if (!Array.isArray(aiAssessmentState.questions) || aiAssessmentState.questions.length === 0) {
         questionWrap.classList.add('hidden');
         questionList.innerHTML = '';
@@ -259,13 +491,13 @@ function renderAiAssessmentQuestions() {
     questionList.innerHTML = aiAssessmentState.questions.map((question, index) => {
         const choices = Array.isArray(question.choices) ? question.choices : [];
         const isCodeChallenge = question.type === 'code_challenge';
-        
+
         if (isCodeChallenge) {
             const language = question.language || 'python';
             const starterCode = question.starterCode || '# Write your code here';
             const testCases = question.testCases || 'No test cases provided';
             const constraints = question.constraints || '';
-            
+
             return `
                 <div class="rounded-xl border border-slate-100 bg-slate-50 p-3">
                     <div class="text-xs text-slate-400 font-semibold mb-1">Q${index + 1} · Code Challenge</div>
@@ -288,14 +520,15 @@ function renderAiAssessmentQuestions() {
                     
                     <div class="mb-2">
                         <label class="text-xs font-semibold text-slate-600 block mb-1">Your Code:</label>
-                        <textarea id="aiAssessCodeAnswer${index}" data-language="${escapeHtml(language)}" 
-                            class="w-full p-2.5 rounded-lg border border-slate-300 focus:ring-2 focus:ring-indigo-500 outline-none text-xs font-mono bg-slate-900 text-slate-100"
+                        <textarea id="aiAssessCodeAnswer${index}" data-ai-code-answer="true" data-question-index="${index}"
+                            data-language="${escapeHtml(language)}"
+                            class="code-editor w-full p-2.5 rounded-lg border border-slate-300 focus:ring-2 focus:ring-indigo-500 outline-none text-xs font-mono bg-slate-900 text-slate-100"
                             rows="10" placeholder="Write your solution here...">${escapeHtml(starterCode)}</textarea>
                     </div>
                 </div>
             `;
         }
-        
+
         const choicesMarkup = choices.length > 0
             ? `
                 <div class="mt-2 space-y-2">
@@ -324,9 +557,10 @@ function renderAiAssessmentQuestions() {
     questionWrap.classList.remove('hidden');
     if (resultWrap) resultWrap.classList.add('hidden');
     if (gradeBtn) gradeBtn.disabled = false;
-    
+
     // Apply syntax highlighting to code blocks
     setTimeout(() => {
+        initAiCodeEditors();
         document.querySelectorAll('pre code').forEach(block => {
             if (window.hljs) {
                 window.hljs.highlightElement(block);
@@ -341,8 +575,13 @@ function collectAiAssessmentAnswers() {
         let answer = '';
         
         if (question.type === 'code_challenge') {
-            const codeArea = document.getElementById(`aiAssessCodeAnswer${index}`);
-            answer = codeArea ? String(codeArea.value || '').trim() : '';
+            const codeEditor = aiCodeEditors.get(index);
+            if (codeEditor) {
+                answer = String(codeEditor.getValue() || '').trim();
+            } else {
+                const codeArea = document.getElementById(`aiAssessCodeAnswer${index}`);
+                answer = codeArea ? String(codeArea.value || '').trim() : '';
+            }
         } else if (choices.length > 0) {
             const selected = document.querySelector(`input[name="aiAssessQ${index}"]:checked`);
             answer = selected ? String(selected.value || '').trim() : '';
@@ -405,6 +644,8 @@ function openAiAssessment(topicId) {
     } = getAiModalElements();
     if (!modal || !materialInput) return;
 
+    destroyAiCodeEditors();
+
     aiAssessmentState = {
         topicId: topic.id,
         material: '',
@@ -453,6 +694,7 @@ function closeAiAssessmentModal() {
     const { modal } = getAiModalElements();
     if (!modal) return;
     modal.classList.add('hidden');
+    destroyAiCodeEditors();
     aiAssessmentState = {
         topicId: null,
         material: '',

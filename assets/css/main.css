@@ -26,6 +26,39 @@ textarea.code-editor {
     font-size: 0.875rem;
     line-height: 1.5;
     tab-size: 4;
+    min-height: 16rem;
+    resize: vertical;
+    white-space: pre;
+}
+
+.ai-code-editor {
+    width: 100%;
+    min-height: 16rem;
+    border: 1px solid #334155;
+    border-radius: 0.75rem;
+    overflow: hidden;
+}
+
+.ai-code-editor.ace_editor {
+    font-family: SFMono-Regular, Consolas, "Liberation Mono", Menlo, monospace;
+    line-height: 1.5;
+}
+
+.ai-code-editor .ace_gutter {
+    background: #0f172a;
+    color: #94a3b8;
+}
+
+.ai-code-editor .ace_active-line {
+    background: rgba(99, 102, 241, 0.15);
+}
+
+.ai-code-editor .ace_gutter-active-line {
+    background: rgba(99, 102, 241, 0.18);
+}
+
+.ai-code-editor .ace_marker-layer .ace_selection {
+    background: rgba(99, 102, 241, 0.35);
 }
 
 pre code {

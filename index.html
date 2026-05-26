@@ -25,7 +25,8 @@
         }
     </script>
     <script src="https://cdn.tailwindcss.com"></script>
-    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/atom-one-dark.min.css">
+    <link rel="stylesheet"
+        href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/atom-one-dark.min.css">
     <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js"></script>
     <link rel="stylesheet" href="assets/css/main.css">
 </head>
@@ -72,7 +73,8 @@
             <div class="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
                 <div>
                     <div class="text-xs font-semibold uppercase tracking-wider text-slate-400 mb-1">Cloud Sync</div>
-                    <div class="text-sm text-slate-600">Sign in to sync your topics and daily activity stats across devices.</div>
+                    <div class="text-sm text-slate-600">Sign in to sync your topics and daily activity stats across
+                        devices.</div>
                     <div id="syncStatus"
                         class="inline-flex mt-2 text-xs font-semibold px-3 py-1 rounded-full bg-slate-100 text-slate-600">
                         Local only (not signed in)
@@ -102,8 +104,8 @@
             </p>
         </section>
 
-        <section data-route-section="topics" class="bg-white p-6 rounded-2xl shadow-sm mb-8 border border-slate-100 transition-colors"
-            id="entryForm">
+        <section data-route-section="topics"
+            class="bg-white p-6 rounded-2xl shadow-sm mb-8 border border-slate-100 transition-colors" id="entryForm">
             <div class="flex justify-between items-center mb-4">
                 <h2 class="text-sm font-semibold uppercase tracking-wider text-slate-400" id="formTitle">Add New Topic
                 </h2>
@@ -141,7 +143,8 @@
             </div>
         </section>
 
-        <section data-route-section="analytics" class="bg-white p-6 rounded-2xl shadow-sm mb-12 border border-slate-100">
+        <section data-route-section="analytics"
+            class="bg-white p-6 rounded-2xl shadow-sm mb-12 border border-slate-100">
             <div class="flex flex-col md:flex-row md:items-center md:justify-between gap-2 mb-4">
                 <h2 class="text-lg font-bold text-slate-700">Daily Activity Stats</h2>
                 <div id="analyticsUpdated" class="text-xs text-slate-400">Updated today</div>
@@ -182,52 +185,58 @@
                 <div class="text-xs text-slate-400 font-semibold uppercase">SRS Quality (Last 30 Days)</div>
                 <div class="grid grid-cols-2 md:grid-cols-5 gap-3 mt-3">
                     <div class="bg-slate-50 rounded-xl p-3 border border-slate-100">
-                        <div class="text-[11px] uppercase tracking-wide text-slate-400 font-semibold">Retention Proxy</div>
+                        <div class="text-[11px] uppercase tracking-wide text-slate-400 font-semibold">Retention Proxy
+                        </div>
                         <div id="srsRetentionProxy" class="text-xl font-bold text-slate-800 mt-1">--</div>
                     </div>
                     <div class="bg-slate-50 rounded-xl p-3 border border-slate-100">
                         <div class="text-[11px] uppercase tracking-wide text-slate-400 font-semibold">Hard <= 7d</div>
-                        <div id="srsHardWithin7d" class="text-xl font-bold text-slate-800 mt-1">--</div>
+                                <div id="srsHardWithin7d" class="text-xl font-bold text-slate-800 mt-1">--</div>
+                        </div>
+                        <div class="bg-slate-50 rounded-xl p-3 border border-slate-100">
+                            <div class="text-[11px] uppercase tracking-wide text-slate-400 font-semibold">Overdue Rate
+                            </div>
+                            <div id="srsOverdueRate" class="text-xl font-bold text-slate-800 mt-1">--</div>
+                        </div>
+                        <div class="bg-slate-50 rounded-xl p-3 border border-slate-100">
+                            <div class="text-[11px] uppercase tracking-wide text-slate-400 font-semibold">Avg Gap</div>
+                            <div id="srsAvgDaysSinceLast" class="text-xl font-bold text-slate-800 mt-1">--</div>
+                        </div>
+                        <div class="bg-slate-50 rounded-xl p-3 border border-slate-100">
+                            <div class="text-[11px] uppercase tracking-wide text-slate-400 font-semibold">Avg Interval
+                            </div>
+                            <div id="srsAvgIntervalAtReview" class="text-xl font-bold text-slate-800 mt-1">--</div>
+                        </div>
                     </div>
-                    <div class="bg-slate-50 rounded-xl p-3 border border-slate-100">
-                        <div class="text-[11px] uppercase tracking-wide text-slate-400 font-semibold">Overdue Rate</div>
-                        <div id="srsOverdueRate" class="text-xl font-bold text-slate-800 mt-1">--</div>
-                    </div>
-                    <div class="bg-slate-50 rounded-xl p-3 border border-slate-100">
-                        <div class="text-[11px] uppercase tracking-wide text-slate-400 font-semibold">Avg Gap</div>
-                        <div id="srsAvgDaysSinceLast" class="text-xl font-bold text-slate-800 mt-1">--</div>
-                    </div>
-                    <div class="bg-slate-50 rounded-xl p-3 border border-slate-100">
-                        <div class="text-[11px] uppercase tracking-wide text-slate-400 font-semibold">Avg Interval</div>
-                        <div id="srsAvgIntervalAtReview" class="text-xl font-bold text-slate-800 mt-1">--</div>
-                    </div>
+                    <div id="srsBucketBreakdown"
+                        class="rounded-xl border border-slate-100 bg-slate-50 p-3 mt-3 space-y-2"></div>
+                    <div id="srsQualityNote" class="text-[11px] text-slate-400 mt-2">Review more in the next few days to
+                        build retention signal</div>
                 </div>
-                <div id="srsBucketBreakdown" class="rounded-xl border border-slate-100 bg-slate-50 p-3 mt-3 space-y-2"></div>
-                <div id="srsQualityNote" class="text-[11px] text-slate-400 mt-2">Review more in the next few days to build retention signal</div>
-            </div>
 
-            <div class="mt-6">
-                <div class="flex items-center justify-between gap-3">
-                    <div class="text-xs text-slate-400 font-semibold uppercase">Category Reviews (All Time)</div>
-                    <button id="categorySortBtn" onclick="toggleCategorySort()"
-                        class="inline-flex items-center gap-2 px-2.5 py-1 rounded-lg border border-slate-200 text-slate-600 hover:bg-slate-50 text-[11px] font-semibold uppercase tracking-wide">
-                        <span id="categorySortIcon">↓</span>
-                        <span id="categorySortLabel">High to Low</span>
-                    </button>
+                <div class="mt-6">
+                    <div class="flex items-center justify-between gap-3">
+                        <div class="text-xs text-slate-400 font-semibold uppercase">Category Reviews (All Time)</div>
+                        <button id="categorySortBtn" onclick="toggleCategorySort()"
+                            class="inline-flex items-center gap-2 px-2.5 py-1 rounded-lg border border-slate-200 text-slate-600 hover:bg-slate-50 text-[11px] font-semibold uppercase tracking-wide">
+                            <span id="categorySortIcon">↓</span>
+                            <span id="categorySortLabel">High to Low</span>
+                        </button>
+                    </div>
+                    <div id="categoryRankSource" class="text-[11px] text-slate-400 mt-1">Based on topic review totals
+                        since start</div>
+                    <div class="rounded-xl border border-slate-100 bg-slate-50 p-3 mt-3">
+                        <div id="categoryRankList" class="space-y-2"></div>
+                    </div>
                 </div>
-                <div id="categoryRankSource" class="text-[11px] text-slate-400 mt-1">Based on topic review totals since start</div>
-                <div class="rounded-xl border border-slate-100 bg-slate-50 p-3 mt-3">
-                    <div id="categoryRankList" class="space-y-2"></div>
-                </div>
-            </div>
 
-            <div class="mt-6">
-                <div class="text-xs text-slate-400 font-semibold uppercase">Category Topic Coverage</div>
-                <div class="text-[11px] text-slate-400 mt-1">Number of topics in each category</div>
-                <div class="rounded-xl border border-slate-100 bg-slate-50 p-3 mt-3">
-                    <div id="categoryTopicCountChart" class="space-y-3"></div>
+                <div class="mt-6">
+                    <div class="text-xs text-slate-400 font-semibold uppercase">Category Topic Coverage</div>
+                    <div class="text-[11px] text-slate-400 mt-1">Number of topics in each category</div>
+                    <div class="rounded-xl border border-slate-100 bg-slate-50 p-3 mt-3">
+                        <div id="categoryTopicCountChart" class="space-y-3"></div>
+                    </div>
                 </div>
-            </div>
         </section>
 
         <section data-route-section="topics" class="border-t border-slate-200 pt-8">
@@ -246,21 +255,25 @@
             </div>
 
             <div class="rounded-xl border border-indigo-100 bg-indigo-50 p-4 text-sm text-indigo-900 mb-6">
-                IntellectFlow helps you study a little every day without overloading your schedule. Add topics, review what is due, and let the app decide when each topic should come back.
+                IntellectFlow helps you study a little every day without overloading your schedule. Add topics, review
+                what is due, and let the app decide when each topic should come back.
             </div>
 
             <div class="space-y-4 text-sm">
                 <div class="rounded-xl border border-slate-100 bg-slate-50 p-4">
                     <div class="font-semibold text-slate-700 mb-1">1. Set your daily capacity</div>
-                    <p class="text-slate-600">At the top-right, set how many minutes you can realistically study today. Start small (for example: 30 to 60 minutes).</p>
+                    <p class="text-slate-600">At the top-right, set how many minutes you can realistically study today.
+                        Start small (for example: 30 to 60 minutes).</p>
                 </div>
                 <div class="rounded-xl border border-slate-100 bg-slate-50 p-4">
                     <div class="font-semibold text-slate-700 mb-1">2. Add topics</div>
-                    <p class="text-slate-600">Open the <span class="font-semibold">Topics</span> tab, add a topic name, optional category, and session length. Add everything you want to learn over time.</p>
+                    <p class="text-slate-600">Open the <span class="font-semibold">Topics</span> tab, add a topic name,
+                        optional category, and session length. Add everything you want to learn over time.</p>
                 </div>
                 <div class="rounded-xl border border-slate-100 bg-slate-50 p-4">
                     <div class="font-semibold text-slate-700 mb-1">3. Follow today's agenda</div>
-                    <p class="text-slate-600">In <span class="font-semibold">Dashboard</span>, complete due topics one by one. If total load is too high, the app defers extra items to reduce burnout.</p>
+                    <p class="text-slate-600">In <span class="font-semibold">Dashboard</span>, complete due topics one
+                        by one. If total load is too high, the app defers extra items to reduce burnout.</p>
                 </div>
                 <div class="rounded-xl border border-slate-100 bg-slate-50 p-4">
                     <div class="font-semibold text-slate-700 mb-1">4. Choose honest review feedback</div>
@@ -268,24 +281,33 @@
                         <span class="font-semibold text-red-600">Struggled</span>,
                         <span class="font-semibold text-amber-600">Okay</span>, or
                         <span class="font-semibold text-green-700">Mastered</span>.
-                        Or use <span class="font-semibold text-indigo-700">Assess with AI</span> to answer generated questions from your material.
+                        Or use <span class="font-semibold text-indigo-700">Assess with AI</span> to answer generated
+                        questions from your material.
                     </p>
                 </div>
                 <div class="rounded-xl border border-slate-100 bg-slate-50 p-4">
                     <div class="font-semibold text-slate-700 mb-1">5. Let spaced repetition do the rest</div>
-                    <p class="text-slate-600">Topics you struggle with come back sooner. Strong topics get pushed further out. New or forgotten topics go through short learning steps before longer intervals.</p>
+                    <p class="text-slate-600">Topics you struggle with come back sooner. Strong topics get pushed
+                        further out. New or forgotten topics go through short learning steps before longer intervals.
+                    </p>
                 </div>
                 <div class="rounded-xl border border-slate-100 bg-slate-50 p-4">
-                    <div class="font-semibold text-slate-700 mb-1">6. Use AI checks when you want objective feedback</div>
-                    <p class="text-slate-600">On a due topic, click <span class="font-semibold text-indigo-700">Assess with AI</span>, paste your material, answer the generated questions, and apply the result. Longer material gives more questions automatically. Existing quizzes are reused unless you click <span class="font-semibold text-indigo-700">Regenerate Quiz</span>.</p>
+                    <div class="font-semibold text-slate-700 mb-1">6. Use AI checks when you want objective feedback
+                    </div>
+                    <p class="text-slate-600">On a due topic, click <span class="font-semibold text-indigo-700">Assess
+                            with AI</span>, paste your material, answer the generated questions, and apply the result.
+                        Longer material gives more questions automatically. Existing quizzes are reused unless you click
+                        <span class="font-semibold text-indigo-700">Regenerate Quiz</span>.</p>
                 </div>
                 <div class="rounded-xl border border-slate-100 bg-slate-50 p-4">
                     <div class="font-semibold text-slate-700 mb-1">7. Check progress in Analytics</div>
-                    <p class="text-slate-600">Use <span class="font-semibold">Analytics</span> to track study consistency, difficulty mix, and SRS quality metrics like retention proxy and overdue rate.</p>
+                    <p class="text-slate-600">Use <span class="font-semibold">Analytics</span> to track study
+                        consistency, difficulty mix, and SRS quality metrics like retention proxy and overdue rate.</p>
                 </div>
                 <div class="rounded-xl border border-slate-100 bg-slate-50 p-4">
                     <div class="font-semibold text-slate-700 mb-1">8. Keep your data safe</div>
-                    <p class="text-slate-600">Use <span class="font-semibold">Backup (.json)</span> regularly. If you study on multiple devices, sign in on the <span class="font-semibold">Sync</span> tab.</p>
+                    <p class="text-slate-600">Use <span class="font-semibold">Backup (.json)</span> regularly. If you
+                        study on multiple devices, sign in on the <span class="font-semibold">Sync</span> tab.</p>
                 </div>
             </div>
         </section>
@@ -300,14 +322,16 @@
                         <h3 class="text-lg font-bold text-slate-800">AI Understanding Check</h3>
                         <p id="aiAssessTopicName" class="text-xs text-slate-500 mt-1">Topic</p>
                     </div>
-                    <button onclick="closeAiAssessmentModal()" class="text-slate-400 hover:text-slate-600 text-sm font-semibold">Close</button>
+                    <button onclick="closeAiAssessmentModal()"
+                        class="text-slate-400 hover:text-slate-600 text-sm font-semibold">Close</button>
                 </div>
 
                 <div class="p-5 space-y-4 max-h-[78vh] overflow-y-auto">
                     <div class="text-xs text-slate-500">
                         Paste your study material. Question count is based only on material length.
                     </div>
-                    <textarea id="aiAssessMaterialInput" rows="8" placeholder="Paste notes, chapter text, or article excerpt..."
+                    <textarea id="aiAssessMaterialInput" rows="8"
+                        placeholder="Paste notes, chapter text, or article excerpt..."
                         class="w-full p-3 rounded-xl border border-slate-200 focus:ring-2 focus:ring-indigo-500 outline-none text-sm"></textarea>
                     <div class="flex flex-wrap items-center justify-between gap-2 text-xs">
                         <div class="text-slate-500">
@@ -363,6 +387,11 @@
 
     <script src="assets/js/core.js"></script>
     <script src="assets/js/sync.js"></script>
+    <script>
+        window.ACE_CDN_BASE = 'https://cdn.jsdelivr.net/npm/ace-builds@1.32.6/src-min-noconflict';
+    </script>
+    <script src="https://cdn.jsdelivr.net/npm/ace-builds@1.32.6/src-min-noconflict/ace.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/ace-builds@1.32.6/src-min-noconflict/ext-language_tools.js"></script>
     <script src="assets/js/features.js"></script>
 </body>
 
