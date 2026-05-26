@@ -125,7 +125,17 @@ serve(async (req) => {
                     items: {
                         type: 'object',
                         additionalProperties: false,
-                        required: ['id', 'prompt', 'type'],
+                        required: [
+                            'id',
+                            'prompt',
+                            'type',
+                            'choices',
+                            'expectedAnswer',
+                            'language',
+                            'starterCode',
+                            'testCases',
+                            'constraints'
+                        ],
                         properties: {
                             id: { type: 'string', minLength: 1 },
                             prompt: { type: 'string', minLength: 5 },
@@ -137,9 +147,9 @@ serve(async (req) => {
                                 maxItems: 5
                             },
                             expectedAnswer: { type: 'string', minLength: 0 },
-                            language: { type: 'string', enum: ['python', 'javascript', 'java', 'csharp'] },
-                            starterCode: { type: 'string', minLength: 10 },
-                            testCases: { type: 'string', minLength: 10 },
+                            language: { type: 'string', enum: ['', 'python', 'javascript', 'java', 'csharp'] },
+                            starterCode: { type: 'string', minLength: 0 },
+                            testCases: { type: 'string', minLength: 0 },
                             constraints: { type: 'string', minLength: 0 }
                         }
                     }
