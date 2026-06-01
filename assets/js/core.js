@@ -233,13 +233,30 @@ function normalizeTopics(raw) {
                     : 'medium';
             const lastAiAssessmentWordCount = Math.max(0, Number(rawLastAiAssessment?.wordCount) || 0);
             const lastAiAssessmentQuestionCount = Math.max(0, Number(rawLastAiAssessment?.questionCount) || 0);
+            const lastAiAssessmentPerQuestion = Array.isArray(rawLastAiAssessment?.perQuestion)
+                ? rawLastAiAssessment.perQuestion
+                    .map((entry) => {
+                        if (!entry || typeof entry !== 'object') return null;
+                        const questionId = String(entry.questionId || '').trim();
+                        if (!questionId) return null;
+                        return {
+                            questionId,
+                            awarded: Math.max(0, Math.min(1, Number(entry.awarded) || 0)),
+                            prompt: String(entry.prompt || '').trim().slice(0, 500),
+                            comment: String(entry.comment || '').trim().slice(0, 500)
+                        };
+                    })
+                    .filter(Boolean)
+                    .slice(0, 50)
+                : [];
             const normalizedLastAiAssessment = lastAiAssessmentDate
                 ? {
                     date: lastAiAssessmentDate,
                     score: lastAiAssessmentScore,
                     suggestedDifficulty: lastAiAssessmentDifficulty,
                     wordCount: lastAiAssessmentWordCount,
-                    questionCount: lastAiAssessmentQuestionCount
+                    questionCount: lastAiAssessmentQuestionCount,
+                    perQuestion: lastAiAssessmentPerQuestion
                 }
                 : null;
             const rawLastAiQuiz = (item.lastAiQuiz && typeof item.lastAiQuiz === 'object')

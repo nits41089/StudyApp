@@ -439,21 +439,89 @@ function renderTagPills(tags, tone = 'slate') {
     }).join('');
 }
 
-function getAiAssessmentTagBuckets(topic, score) {
-    const tags = getAssessmentTagsForTopic(topic);
-    const normalizedScore = Math.max(0, Math.min(100, Number(score) || 0));
-    return normalizedScore >= 80
-        ? { known: tags, prepare: [] }
-        : { known: [], prepare: tags };
+function getQuestionPromptById(questionId, questions = []) {
+    const match = Array.isArray(questions)
+        ? questions.find(question => String(question.id) === String(questionId))
+        : null;
+    return String(match?.prompt || '').trim();
 }
 
-function renderCurrentAiAssessmentTagSplit(topic, score) {
+function normalizeAssessmentPerQuestion(rawPerQuestion, questions = []) {
+    if (!Array.isArray(rawPerQuestion)) return [];
+
+    return rawPerQuestion
+        .map(item => {
+            if (!item || typeof item !== 'object') return null;
+            const questionId = String(item.questionId || '').trim();
+            if (!questionId) return null;
+            const awarded = Math.max(0, Math.min(1, Number(item.awarded) || 0));
+            return {
+                questionId,
+                awarded,
+                prompt: getQuestionPromptById(questionId, questions).slice(0, 500),
+                comment: String(item.comment || '').trim().slice(0, 500)
+            };
+        })
+        .filter(Boolean);
+}
+
+function getAssessmentQuestionBuckets(assessment) {
+    const perQuestion = Array.isArray(assessment?.perQuestion) ? assessment.perQuestion : [];
+    return {
+        known: perQuestion.filter(item => Number(item.awarded) >= 0.75),
+        prepare: perQuestion.filter(item => Number(item.awarded) < 0.75)
+    };
+}
+
+function renderQuestionSummaryItems(items, emptyText) {
+    const list = Array.isArray(items) ? items : [];
+    if (list.length === 0) {
+        return `<div class="text-xs text-slate-400">${escapeHtml(emptyText)}</div>`;
+    }
+
+    return list.map((item, index) => `
+        <div class="rounded-lg border border-slate-100 bg-white p-2">
+            <div class="flex items-start justify-between gap-2">
+                <div class="text-xs font-semibold text-slate-700">${escapeHtml(item.questionId || `Q${index + 1}`)}</div>
+                <div class="text-[11px] font-semibold text-slate-500">${Math.round((Number(item.awarded) || 0) * 100)}%</div>
+            </div>
+            ${item.prompt ? `<div class="text-xs text-slate-600 mt-1">${escapeHtml(item.prompt)}</div>` : ''}
+            ${item.comment ? `<div class="text-[11px] text-slate-500 mt-1">${escapeHtml(item.comment)}</div>` : ''}
+        </div>
+    `).join('');
+}
+
+function renderTopicAssessmentCard(topic, items, tone) {
+    const score = Math.round(Number(topic.lastAiAssessment?.score) || 0);
+    const date = topic.lastAiAssessment?.date
+        ? new Date(topic.lastAiAssessment.date).toLocaleDateString()
+        : '';
+    const borderClass = tone === 'emerald' ? 'border-emerald-100' : 'border-amber-100';
+    return `
+        <div class="rounded-lg border ${borderClass} bg-white p-3">
+            <div class="flex items-start justify-between gap-3">
+                <div>
+                    <div class="text-sm font-semibold text-slate-800">${escapeHtml(topic.name)}</div>
+                    <div class="mt-1 flex flex-wrap gap-1">${renderTagPills(getAssessmentTagsForTopic(topic), 'slate')}</div>
+                </div>
+                <div class="text-xs font-bold text-slate-600 whitespace-nowrap">${score}%</div>
+            </div>
+            <div class="text-[11px] text-slate-400 mt-2">${date ? `Assessed ${date}` : 'AI assessed'}</div>
+            <div class="mt-2 space-y-2">
+                ${renderQuestionSummaryItems(items.slice(0, 3), 'No question evidence yet.')}
+            </div>
+        </div>
+    `;
+}
+
+function renderCurrentAiAssessmentTagSplit(topic, assessment) {
     const { tagSplit, knownTags, prepareTags } = getAiModalElements();
     if (!tagSplit || !knownTags || !prepareTags || !topic) return;
 
-    const buckets = getAiAssessmentTagBuckets(topic, score);
-    knownTags.innerHTML = renderTagPills(buckets.known, 'emerald');
-    prepareTags.innerHTML = renderTagPills(buckets.prepare, 'amber');
+    const buckets = getAssessmentQuestionBuckets(assessment);
+    const tagsMarkup = `<div class="mb-2 flex flex-wrap gap-1">${renderTagPills(getAssessmentTagsForTopic(topic), 'slate')}</div>`;
+    knownTags.innerHTML = tagsMarkup + renderQuestionSummaryItems(buckets.known, 'No strong answers in this assessment.');
+    prepareTags.innerHTML = tagsMarkup + renderQuestionSummaryItems(buckets.prepare, 'No weak answers in this assessment.');
     tagSplit.classList.remove('hidden');
 }
 
@@ -464,59 +532,39 @@ function renderAiTagReadiness() {
     const updatedNode = document.getElementById('aiTagReadinessUpdated');
     if (!section || !knownNode || !prepareNode) return;
 
-    const tagStats = new Map();
-    topics.forEach(topic => {
-        const assessment = topic.lastAiAssessment;
-        if (!assessment || !assessment.date) return;
-
-        const score = Math.max(0, Math.min(100, Number(assessment.score) || 0));
-        getAssessmentTagsForTopic(topic).forEach(tag => {
-            const existing = tagStats.get(tag) || {
-                label: tag,
-                total: 0,
-                count: 0,
-                latestDate: ''
-            };
-            existing.total += score;
-            existing.count += 1;
-            existing.latestDate = existing.latestDate && existing.latestDate > assessment.date
-                ? existing.latestDate
-                : assessment.date;
-            tagStats.set(tag, existing);
-        });
-    });
-
-    const entries = Array.from(tagStats.values())
-        .map(item => ({
-            label: item.label,
-            score: Math.round(item.total / Math.max(1, item.count)),
-            count: item.count,
-            latestDate: item.latestDate
-        }))
+    const entries = topics
+        .filter(topic => topic.lastAiAssessment?.date)
+        .map(topic => {
+            const buckets = getAssessmentQuestionBuckets(topic.lastAiAssessment);
+            return { topic, known: buckets.known, prepare: buckets.prepare };
+        })
         .sort((a, b) => {
-            if (b.score !== a.score) return b.score - a.score;
-            return a.label.localeCompare(b.label);
+            const aDate = String(a.topic.lastAiAssessment?.date || '');
+            const bDate = String(b.topic.lastAiAssessment?.date || '');
+            if (bDate !== aDate) return bDate.localeCompare(aDate);
+            return String(a.topic.name || '').localeCompare(String(b.topic.name || ''));
         });
 
     const known = entries
-        .filter(item => item.score >= 80)
-        .map(item => ({ label: item.label, meta: `${item.score}% · ${item.count}` }));
+        .filter(item => item.known.length > 0)
+        .map(item => renderTopicAssessmentCard(item.topic, item.known, 'emerald'))
+        .join('');
     const prepare = entries
-        .filter(item => item.score < 80)
-        .sort((a, b) => a.score - b.score || a.label.localeCompare(b.label))
-        .map(item => ({ label: item.label, meta: `${item.score}% · ${item.count}` }));
+        .filter(item => item.prepare.length > 0)
+        .map(item => renderTopicAssessmentCard(item.topic, item.prepare, 'amber'))
+        .join('');
 
-    knownNode.innerHTML = renderTagPills(known, 'emerald');
-    prepareNode.innerHTML = renderTagPills(prepare, 'amber');
+    knownNode.innerHTML = known || `<div class="text-xs text-slate-400">No strong question-level evidence yet.</div>`;
+    prepareNode.innerHTML = prepare || `<div class="text-xs text-slate-400">No weak question-level evidence yet.</div>`;
 
     if (updatedNode) {
         const latest = entries
-            .map(item => item.latestDate)
+            .map(item => item.topic.lastAiAssessment?.date)
             .filter(Boolean)
             .sort()
             .pop();
         updatedNode.textContent = latest
-            ? `Based on ${entries.length} assessed tag${entries.length === 1 ? '' : 's'} · latest ${new Date(latest).toLocaleDateString()}`
+            ? `Based on ${entries.length} assessed topic${entries.length === 1 ? '' : 's'} · latest ${new Date(latest).toLocaleDateString()}`
             : 'Complete an AI assessment to populate this section';
     }
 }
@@ -972,18 +1020,21 @@ async function gradeAiAssessmentAnswers() {
         const score = Number.isFinite(numericScore) ? Math.max(0, Math.min(100, numericScore)) : 0;
         const suggestedDifficulty = normalizeDifficultyLabel(response?.recommendedDifficulty || response?.difficulty) || scoreToDifficulty(score);
         const feedback = String(response?.feedback || response?.summary || '').trim();
+        const perQuestion = normalizeAssessmentPerQuestion(response?.perQuestion, aiAssessmentState.questions);
 
         aiAssessmentState.result = {
             score,
             suggestedDifficulty,
-            feedback
+            feedback,
+            perQuestion
         };
         topic.lastAiAssessment = {
             date: new Date().toISOString(),
             score: Math.round(score),
             suggestedDifficulty,
             wordCount: aiAssessmentState.wordCount,
-            questionCount: aiAssessmentState.questions.length
+            questionCount: aiAssessmentState.questions.length,
+            perQuestion
         };
         save();
 
@@ -992,7 +1043,7 @@ async function gradeAiAssessmentAnswers() {
         if (feedbackNode) {
             feedbackNode.textContent = feedback || 'AI completed grading. Apply this result to update schedule.';
         }
-        renderCurrentAiAssessmentTagSplit(topic, score);
+        renderCurrentAiAssessmentTagSplit(topic, topic.lastAiAssessment);
         if (resultWrap) resultWrap.classList.remove('hidden');
         setAiAssessmentStatus('Assessment complete. Apply result to schedule.', 'green');
         trackClarityEvent('ai_assess_graded');
@@ -1022,7 +1073,10 @@ function applyAiAssessmentResult() {
         score: Math.round(result.score),
         suggestedDifficulty: result.suggestedDifficulty,
         wordCount: aiAssessmentState.wordCount,
-        questionCount: aiAssessmentState.questions.length
+        questionCount: aiAssessmentState.questions.length,
+        perQuestion: Array.isArray(result.perQuestion)
+            ? result.perQuestion
+            : (Array.isArray(topic.lastAiAssessment?.perQuestion) ? topic.lastAiAssessment.perQuestion : [])
     };
 
     completeTopic(topic.id, result.suggestedDifficulty);
