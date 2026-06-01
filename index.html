@@ -141,6 +141,26 @@
                 class="mt-6 p-4 bg-amber-50 text-amber-700 rounded-xl text-sm hidden border border-amber-100">
                 ⚠️ Some topics have been deferred to tomorrow to prevent burnout.
             </div>
+            <div id="aiTagReadinessSection" class="mt-6 bg-white p-5 rounded-2xl shadow-sm border border-slate-100">
+                <div class="flex flex-col md:flex-row md:items-center md:justify-between gap-2 mb-4">
+                    <div>
+                        <h3 class="text-sm font-bold text-slate-700">AI Tag Readiness</h3>
+                        <div id="aiTagReadinessUpdated" class="text-xs text-slate-400 mt-1">
+                            Based on completed AI assessments
+                        </div>
+                    </div>
+                </div>
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div class="rounded-xl border border-emerald-100 bg-emerald-50 p-4">
+                        <div class="text-xs uppercase tracking-wide text-emerald-700 font-semibold mb-3">What I Know</div>
+                        <div id="aiKnownTags" class="flex flex-wrap gap-2"></div>
+                    </div>
+                    <div class="rounded-xl border border-amber-100 bg-amber-50 p-4">
+                        <div class="text-xs uppercase tracking-wide text-amber-700 font-semibold mb-3">What To Prepare</div>
+                        <div id="aiPrepareTags" class="flex flex-wrap gap-2"></div>
+                    </div>
+                </div>
+            </div>
         </section>
 
         <section data-route-section="analytics"
@@ -369,6 +389,16 @@
                             · Suggested: <span id="aiAssessSuggestion" class="font-bold text-slate-900">--</span>
                         </div>
                         <div id="aiAssessFeedback" class="mt-2 text-sm text-slate-600"></div>
+                        <div id="aiAssessTagSplit" class="mt-4 hidden grid grid-cols-1 md:grid-cols-2 gap-3">
+                            <div class="rounded-lg border border-emerald-100 bg-white p-3">
+                                <div class="text-xs uppercase tracking-wide text-emerald-700 font-semibold mb-2">What I Know</div>
+                                <div id="aiAssessKnownTags" class="flex flex-wrap gap-2"></div>
+                            </div>
+                            <div class="rounded-lg border border-amber-100 bg-white p-3">
+                                <div class="text-xs uppercase tracking-wide text-amber-700 font-semibold mb-2">What To Prepare</div>
+                                <div id="aiAssessPrepareTags" class="flex flex-wrap gap-2"></div>
+                            </div>
+                        </div>
                         <div class="mt-3 flex flex-wrap gap-2">
                             <button id="aiAssessApplyBtn" onclick="applyAiAssessmentResult()"
                                 class="px-3 py-2 rounded-lg bg-indigo-600 text-white text-xs font-semibold hover:bg-indigo-700">

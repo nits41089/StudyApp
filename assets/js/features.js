@@ -379,6 +379,9 @@ function getAiModalElements() {
         score: document.getElementById('aiAssessScore'),
         suggestion: document.getElementById('aiAssessSuggestion'),
         feedback: document.getElementById('aiAssessFeedback'),
+        tagSplit: document.getElementById('aiAssessTagSplit'),
+        knownTags: document.getElementById('aiAssessKnownTags'),
+        prepareTags: document.getElementById('aiAssessPrepareTags'),
         generateBtn: document.getElementById('aiAssessGenerateBtn'),
         regenerateBtn: document.getElementById('aiAssessRegenerateBtn'),
         gradeBtn: document.getElementById('aiAssessGradeBtn'),
@@ -404,6 +407,118 @@ function setAiAssessmentStatus(message, tone = 'slate') {
     };
     status.className = `text-xs ${toneClassMap[tone] || toneClassMap.slate}`;
     status.textContent = message || '';
+}
+
+function getAssessmentTagsForTopic(topic) {
+    const categories = normalizeCategoryList(topic?.categories || []);
+    return categories.length > 0 ? categories : ['Uncategorized'];
+}
+
+function renderTagPills(tags, tone = 'slate') {
+    const list = Array.isArray(tags) ? tags.filter(Boolean) : [];
+    const toneClasses = {
+        emerald: 'bg-emerald-100 text-emerald-800 border-emerald-200',
+        amber: 'bg-amber-100 text-amber-800 border-amber-200',
+        slate: 'bg-slate-100 text-slate-600 border-slate-200'
+    };
+    const classes = toneClasses[tone] || toneClasses.slate;
+
+    if (list.length === 0) {
+        return `<div class="text-xs text-slate-400">No tags yet.</div>`;
+    }
+
+    return list.map(tag => {
+        const label = typeof tag === 'string' ? tag : tag.label;
+        const meta = typeof tag === 'string' ? '' : tag.meta;
+        return `
+            <span class="inline-flex items-center gap-1 rounded-full border px-2.5 py-1 text-xs font-semibold ${classes}">
+                ${escapeHtml(label)}
+                ${meta ? `<span class="font-normal opacity-75">${escapeHtml(meta)}</span>` : ''}
+            </span>
+        `;
+    }).join('');
+}
+
+function getAiAssessmentTagBuckets(topic, score) {
+    const tags = getAssessmentTagsForTopic(topic);
+    const normalizedScore = Math.max(0, Math.min(100, Number(score) || 0));
+    return normalizedScore >= 80
+        ? { known: tags, prepare: [] }
+        : { known: [], prepare: tags };
+}
+
+function renderCurrentAiAssessmentTagSplit(topic, score) {
+    const { tagSplit, knownTags, prepareTags } = getAiModalElements();
+    if (!tagSplit || !knownTags || !prepareTags || !topic) return;
+
+    const buckets = getAiAssessmentTagBuckets(topic, score);
+    knownTags.innerHTML = renderTagPills(buckets.known, 'emerald');
+    prepareTags.innerHTML = renderTagPills(buckets.prepare, 'amber');
+    tagSplit.classList.remove('hidden');
+}
+
+function renderAiTagReadiness() {
+    const section = document.getElementById('aiTagReadinessSection');
+    const knownNode = document.getElementById('aiKnownTags');
+    const prepareNode = document.getElementById('aiPrepareTags');
+    const updatedNode = document.getElementById('aiTagReadinessUpdated');
+    if (!section || !knownNode || !prepareNode) return;
+
+    const tagStats = new Map();
+    topics.forEach(topic => {
+        const assessment = topic.lastAiAssessment;
+        if (!assessment || !assessment.date) return;
+
+        const score = Math.max(0, Math.min(100, Number(assessment.score) || 0));
+        getAssessmentTagsForTopic(topic).forEach(tag => {
+            const existing = tagStats.get(tag) || {
+                label: tag,
+                total: 0,
+                count: 0,
+                latestDate: ''
+            };
+            existing.total += score;
+            existing.count += 1;
+            existing.latestDate = existing.latestDate && existing.latestDate > assessment.date
+                ? existing.latestDate
+                : assessment.date;
+            tagStats.set(tag, existing);
+        });
+    });
+
+    const entries = Array.from(tagStats.values())
+        .map(item => ({
+            label: item.label,
+            score: Math.round(item.total / Math.max(1, item.count)),
+            count: item.count,
+            latestDate: item.latestDate
+        }))
+        .sort((a, b) => {
+            if (b.score !== a.score) return b.score - a.score;
+            return a.label.localeCompare(b.label);
+        });
+
+    const known = entries
+        .filter(item => item.score >= 80)
+        .map(item => ({ label: item.label, meta: `${item.score}% · ${item.count}` }));
+    const prepare = entries
+        .filter(item => item.score < 80)
+        .sort((a, b) => a.score - b.score || a.label.localeCompare(b.label))
+        .map(item => ({ label: item.label, meta: `${item.score}% · ${item.count}` }));
+
+    knownNode.innerHTML = renderTagPills(known, 'emerald');
+    prepareNode.innerHTML = renderTagPills(prepare, 'amber');
+
+    if (updatedNode) {
+        const latest = entries
+            .map(item => item.latestDate)
+            .filter(Boolean)
+            .sort()
+            .pop();
+        updatedNode.textContent = latest
+            ? `Based on ${entries.length} assessed tag${entries.length === 1 ? '' : 's'} · latest ${new Date(latest).toLocaleDateString()}`
+            : 'Complete an AI assessment to populate this section';
+    }
 }
 
 function updateAiAssessmentLengthInfo() {
@@ -476,7 +591,7 @@ function getSavedAiQuizForTopic(topic) {
 }
 
 function renderAiAssessmentQuestions() {
-    const { questionWrap, questionList, gradeBtn, resultWrap } = getAiModalElements();
+    const { questionWrap, questionList, gradeBtn, resultWrap, tagSplit } = getAiModalElements();
     if (!questionWrap || !questionList) return;
 
     destroyAiCodeEditors();
@@ -485,6 +600,7 @@ function renderAiAssessmentQuestions() {
         questionWrap.classList.add('hidden');
         questionList.innerHTML = '';
         if (resultWrap) resultWrap.classList.add('hidden');
+        if (tagSplit) tagSplit.classList.add('hidden');
         return;
     }
 
@@ -556,6 +672,7 @@ function renderAiAssessmentQuestions() {
 
     questionWrap.classList.remove('hidden');
     if (resultWrap) resultWrap.classList.add('hidden');
+    if (tagSplit) tagSplit.classList.add('hidden');
     if (gradeBtn) gradeBtn.disabled = false;
 
     // Apply syntax highlighting to code blocks
@@ -640,7 +757,10 @@ function openAiAssessment(topicId) {
         applyBtn,
         score,
         suggestion,
-        feedback
+        feedback,
+        tagSplit,
+        knownTags,
+        prepareTags
     } = getAiModalElements();
     if (!modal || !materialInput) return;
 
@@ -663,6 +783,9 @@ function openAiAssessment(topicId) {
     if (score) score.textContent = '--';
     if (suggestion) suggestion.textContent = '--';
     if (feedback) feedback.textContent = '';
+    if (tagSplit) tagSplit.classList.add('hidden');
+    if (knownTags) knownTags.innerHTML = '';
+    if (prepareTags) prepareTags.innerHTML = '';
     if (generateBtn) generateBtn.disabled = false;
     if (regenerateBtn) regenerateBtn.disabled = false;
     if (gradeBtn) gradeBtn.disabled = false;
@@ -749,6 +872,8 @@ async function generateAiAssessmentQuestions(forceRegenerate = false) {
         if (gradeBtn) gradeBtn.disabled = true;
         if (applyBtn) applyBtn.disabled = true;
         if (resultWrap) resultWrap.classList.add('hidden');
+        const { tagSplit } = getAiModalElements();
+        if (tagSplit) tagSplit.classList.add('hidden');
         setAiAssessmentStatus('Generating questions with AI...', 'indigo');
 
         const response = await invokeAiAssessmentFunction(AI_GENERATE_FUNCTION, {
@@ -853,12 +978,21 @@ async function gradeAiAssessmentAnswers() {
             suggestedDifficulty,
             feedback
         };
+        topic.lastAiAssessment = {
+            date: new Date().toISOString(),
+            score: Math.round(score),
+            suggestedDifficulty,
+            wordCount: aiAssessmentState.wordCount,
+            questionCount: aiAssessmentState.questions.length
+        };
+        save();
 
         if (scoreNode) scoreNode.textContent = `${Math.round(score)}%`;
         if (suggestionNode) suggestionNode.textContent = difficultyToReadableLabel(suggestedDifficulty);
         if (feedbackNode) {
             feedbackNode.textContent = feedback || 'AI completed grading. Apply this result to update schedule.';
         }
+        renderCurrentAiAssessmentTagSplit(topic, score);
         if (resultWrap) resultWrap.classList.remove('hidden');
         setAiAssessmentStatus('Assessment complete. Apply result to schedule.', 'green');
         trackClarityEvent('ai_assess_graded');
@@ -884,7 +1018,7 @@ function applyAiAssessmentResult() {
     }
 
     topic.lastAiAssessment = {
-        date: new Date().toISOString(),
+        date: topic.lastAiAssessment?.date || new Date().toISOString(),
         score: Math.round(result.score),
         suggestedDifficulty: result.suggestedDifficulty,
         wordCount: aiAssessmentState.wordCount,
@@ -1470,6 +1604,7 @@ function render() {
     loadIndicator.innerText = `Load: ${currentLoad} / ${dailyCap} min`;
     loadIndicator.className = `text-sm font-medium px-4 py-1 rounded-full ${currentLoad > dailyCap * 0.9 ? 'bg-amber-100 text-amber-700' : 'bg-green-100 text-green-700'}`;
     overflowNotice.classList.toggle('hidden', !hasOverflow);
+    renderAiTagReadiness();
 }
 
 function renderLibrary() {
