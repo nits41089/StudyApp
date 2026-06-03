@@ -473,6 +473,10 @@ function getAssessmentQuestionBuckets(assessment) {
     };
 }
 
+function hasQuestionLevelEvidence(assessment) {
+    return Array.isArray(assessment?.perQuestion) && assessment.perQuestion.length > 0;
+}
+
 function renderQuestionSummaryItems(items, emptyText) {
     const list = Array.isArray(items) ? items : [];
     if (list.length === 0) {
@@ -491,82 +495,122 @@ function renderQuestionSummaryItems(items, emptyText) {
     `).join('');
 }
 
-function renderTopicAssessmentCard(topic, items, tone) {
-    const score = Math.round(Number(topic.lastAiAssessment?.score) || 0);
-    const date = topic.lastAiAssessment?.date
-        ? new Date(topic.lastAiAssessment.date).toLocaleDateString()
-        : '';
-    const borderClass = tone === 'emerald' ? 'border-emerald-100' : 'border-amber-100';
-    return `
-        <div class="rounded-lg border ${borderClass} bg-white p-3">
-            <div class="flex items-start justify-between gap-3">
-                <div>
-                    <div class="text-sm font-semibold text-slate-800">${escapeHtml(topic.name)}</div>
-                    <div class="mt-1 flex flex-wrap gap-1">${renderTagPills(getAssessmentTagsForTopic(topic), 'slate')}</div>
-                </div>
-                <div class="text-xs font-bold text-slate-600 whitespace-nowrap">${score}%</div>
-            </div>
-            <div class="text-[11px] text-slate-400 mt-2">${date ? `Assessed ${date}` : 'AI assessed'}</div>
-            <div class="mt-2 space-y-2">
-                ${renderQuestionSummaryItems(items.slice(0, 3), 'No question evidence yet.')}
-            </div>
-        </div>
-    `;
-}
-
 function renderCurrentAiAssessmentTagSplit(topic, assessment) {
     const { tagSplit, knownTags, prepareTags } = getAiModalElements();
     if (!tagSplit || !knownTags || !prepareTags || !topic) return;
 
-    const buckets = getAssessmentQuestionBuckets(assessment);
     const tagsMarkup = `<div class="mb-2 flex flex-wrap gap-1">${renderTagPills(getAssessmentTagsForTopic(topic), 'slate')}</div>`;
+
+    if (!hasQuestionLevelEvidence(assessment)) {
+        const message = '<div class="text-xs text-slate-400">Question-level evidence was not returned. Redeploy the AI grading function if needed, then grade again.</div>';
+        knownTags.innerHTML = tagsMarkup + message;
+        prepareTags.innerHTML = tagsMarkup + message;
+        tagSplit.classList.remove('hidden');
+        return;
+    }
+
+    const buckets = getAssessmentQuestionBuckets(assessment);
     knownTags.innerHTML = tagsMarkup + renderQuestionSummaryItems(buckets.known, 'No strong answers in this assessment.');
     prepareTags.innerHTML = tagsMarkup + renderQuestionSummaryItems(buckets.prepare, 'No weak answers in this assessment.');
     tagSplit.classList.remove('hidden');
 }
 
-function renderAiTagReadiness() {
-    const section = document.getElementById('aiTagReadinessSection');
-    const knownNode = document.getElementById('aiKnownTags');
-    const prepareNode = document.getElementById('aiPrepareTags');
-    const updatedNode = document.getElementById('aiTagReadinessUpdated');
-    if (!section || !knownNode || !prepareNode) return;
-
-    const entries = topics
+function getAssessedTopicScoreSummary() {
+    const assessed = topics
         .filter(topic => topic.lastAiAssessment?.date)
-        .map(topic => {
-            const buckets = getAssessmentQuestionBuckets(topic.lastAiAssessment);
-            return { topic, known: buckets.known, prepare: buckets.prepare };
-        })
-        .sort((a, b) => {
-            const aDate = String(a.topic.lastAiAssessment?.date || '');
-            const bDate = String(b.topic.lastAiAssessment?.date || '');
-            if (bDate !== aDate) return bDate.localeCompare(aDate);
-            return String(a.topic.name || '').localeCompare(String(b.topic.name || ''));
-        });
+        .map(topic => Number(topic.lastAiAssessment?.score))
+        .filter(score => Number.isFinite(score));
+    const average = assessed.length > 0
+        ? Math.round(assessed.reduce((sum, score) => sum + score, 0) / assessed.length)
+        : null;
+    return { average, count: assessed.length };
+}
 
-    const known = entries
-        .filter(item => item.known.length > 0)
-        .map(item => renderTopicAssessmentCard(item.topic, item.known, 'emerald'))
-        .join('');
-    const prepare = entries
-        .filter(item => item.prepare.length > 0)
-        .map(item => renderTopicAssessmentCard(item.topic, item.prepare, 'amber'))
-        .join('');
+function renderAiGlobalScore() {
+    const scoreNode = document.getElementById('aiGlobalScore');
+    const metaNode = document.getElementById('aiGlobalScoreMeta');
+    if (!scoreNode || !metaNode) return;
 
-    knownNode.innerHTML = known || `<div class="text-xs text-slate-400">No strong question-level evidence yet.</div>`;
-    prepareNode.innerHTML = prepare || `<div class="text-xs text-slate-400">No weak question-level evidence yet.</div>`;
+    const summary = getAssessedTopicScoreSummary();
+    scoreNode.textContent = summary.average === null ? '--' : `${summary.average}%`;
+    metaNode.textContent = summary.count === 0
+        ? 'No assessments'
+        : `${summary.count} assessed topic${summary.count === 1 ? '' : 's'}`;
+}
 
-    if (updatedNode) {
-        const latest = entries
-            .map(item => item.topic.lastAiAssessment?.date)
-            .filter(Boolean)
-            .sort()
-            .pop();
-        updatedNode.textContent = latest
-            ? `Based on ${entries.length} assessed topic${entries.length === 1 ? '' : 's'} · latest ${new Date(latest).toLocaleDateString()}`
-            : 'Complete an AI assessment to populate this section';
+function getTopicAiSummaryElements() {
+    return {
+        modal: document.getElementById('topicAiSummaryModal'),
+        title: document.getElementById('topicAiSummaryTitle'),
+        tags: document.getElementById('topicAiSummaryTags'),
+        score: document.getElementById('topicAiSummaryScore'),
+        meta: document.getElementById('topicAiSummaryMeta'),
+        empty: document.getElementById('topicAiSummaryEmpty'),
+        content: document.getElementById('topicAiSummaryContent'),
+        known: document.getElementById('topicAiSummaryKnown'),
+        prepare: document.getElementById('topicAiSummaryPrepare')
+    };
+}
+
+function openTopicAiSummary(topicId) {
+    const topic = topics.find(item => item.id === topicId);
+    if (!topic) return;
+
+    const {
+        modal,
+        title,
+        tags,
+        score,
+        meta,
+        empty,
+        content,
+        known,
+        prepare
+    } = getTopicAiSummaryElements();
+    if (!modal) return;
+
+    const assessment = topic.lastAiAssessment;
+    if (title) title.textContent = topic.name;
+    if (tags) tags.innerHTML = renderTagPills(getAssessmentTagsForTopic(topic), 'slate');
+    if (score) score.textContent = assessment?.date ? `${Math.round(Number(assessment.score) || 0)}%` : '--';
+    if (meta) {
+        meta.textContent = assessment?.date
+            ? ` · ${Number(assessment.questionCount) || 0} questions · ${new Date(assessment.date).toLocaleDateString()}`
+            : '';
     }
+
+    if (!assessment?.date) {
+        if (empty) {
+            empty.textContent = 'No AI assessment yet. Use Assess with AI on this topic to generate a question-level summary.';
+            empty.classList.remove('hidden');
+        }
+        if (content) content.classList.add('hidden');
+        modal.classList.remove('hidden');
+        return;
+    }
+
+    if (!hasQuestionLevelEvidence(assessment)) {
+        if (empty) {
+            empty.textContent = 'This topic has an older AI assessment without question-level evidence. Grade it again to populate what you know and what you need to prepare.';
+            empty.classList.remove('hidden');
+        }
+        if (content) content.classList.add('hidden');
+        modal.classList.remove('hidden');
+        return;
+    }
+
+    const buckets = getAssessmentQuestionBuckets(assessment);
+    if (empty) empty.classList.add('hidden');
+    if (content) content.classList.remove('hidden');
+    if (known) known.innerHTML = renderQuestionSummaryItems(buckets.known, 'No strong answers in this assessment.');
+    if (prepare) prepare.innerHTML = renderQuestionSummaryItems(buckets.prepare, 'No weak answers in this assessment.');
+    modal.classList.remove('hidden');
+    trackClarityEvent('topic_ai_summary_opened');
+}
+
+function closeTopicAiSummaryModal() {
+    const { modal } = getTopicAiSummaryElements();
+    if (modal) modal.classList.add('hidden');
 }
 
 function updateAiAssessmentLengthInfo() {
@@ -1045,7 +1089,12 @@ async function gradeAiAssessmentAnswers() {
         }
         renderCurrentAiAssessmentTagSplit(topic, topic.lastAiAssessment);
         if (resultWrap) resultWrap.classList.remove('hidden');
-        setAiAssessmentStatus('Assessment complete. Apply result to schedule.', 'green');
+        setAiAssessmentStatus(
+            perQuestion.length > 0
+                ? 'Assessment complete. Apply result to schedule.'
+                : 'Assessment complete, but question-level evidence was not returned. Redeploy the grading function if needed.',
+            perQuestion.length > 0 ? 'green' : 'amber'
+        );
         trackClarityEvent('ai_assess_graded');
     } catch (error) {
         console.error(error);
@@ -1658,7 +1707,7 @@ function render() {
     loadIndicator.innerText = `Load: ${currentLoad} / ${dailyCap} min`;
     loadIndicator.className = `text-sm font-medium px-4 py-1 rounded-full ${currentLoad > dailyCap * 0.9 ? 'bg-amber-100 text-amber-700' : 'bg-green-100 text-green-700'}`;
     overflowNotice.classList.toggle('hidden', !hasOverflow);
-    renderAiTagReadiness();
+    renderAiGlobalScore();
 }
 
 function renderLibrary() {
@@ -1674,14 +1723,20 @@ function renderLibrary() {
 
     filtered.forEach(topic => {
         const item = document.createElement('div');
-        item.className = "flex justify-between items-center p-3 bg-white rounded-lg border border-slate-100 hover:shadow-sm";
+        const assessment = topic.lastAiAssessment;
+        const assessmentScore = assessment?.date ? `${Math.round(Number(assessment.score) || 0)}%` : '--';
+        const assessmentMeta = assessment?.date
+            ? `AI: ${assessmentScore}`
+            : 'AI: not assessed';
+        item.className = "flex justify-between items-start gap-3 p-3 bg-white rounded-lg border border-slate-100 hover:shadow-sm";
         item.innerHTML = `
-            <div>
+            <div class="min-w-0">
                 <div class="font-semibold text-slate-700">${escapeHtml(topic.name)}</div>
                 ${renderCategoryBadges(topic.categories)}
-                <div class="text-xs text-slate-400">Next: ${topic.nextReview}</div>
+                <div class="text-xs text-slate-400">Next: ${topic.nextReview} · ${escapeHtml(assessmentMeta)}</div>
             </div>
-            <div class="flex gap-2">
+            <div class="flex flex-wrap justify-end gap-2">
+                <button onclick="openTopicAiSummary(${topic.id})" class="px-2.5 py-1 rounded-lg border border-indigo-200 text-indigo-700 text-xs font-semibold hover:bg-indigo-50">AI Summary</button>
                 <button onclick="editTopic(${topic.id})" class="text-slate-400 hover:text-indigo-600 p-1">✏️</button>
                 <button onclick="deleteTopic(${topic.id})" class="text-slate-400 hover:text-red-600 p-1">🗑️</button>
             </div>
@@ -1750,6 +1805,10 @@ document.addEventListener('keydown', (event) => {
     const { modal } = getAiModalElements();
     if (modal && !modal.classList.contains('hidden')) {
         closeAiAssessmentModal();
+    }
+    const { modal: topicSummaryModal } = getTopicAiSummaryElements();
+    if (topicSummaryModal && !topicSummaryModal.classList.contains('hidden')) {
+        closeTopicAiSummaryModal();
     }
 });
 

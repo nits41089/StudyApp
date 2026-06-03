@@ -39,7 +39,14 @@
                 <h1 class="text-3xl font-bold text-indigo-600">IntellectFlow</h1>
                 <p class="text-slate-500">Master content without the burnout.</p>
             </div>
-            <div class="flex gap-4 items-end">
+            <div class="flex flex-wrap gap-4 items-end">
+                <div class="text-right">
+                    <label class="block text-xs font-semibold uppercase text-slate-400">AI Score</label>
+                    <div id="aiGlobalScore" class="text-lg font-bold text-slate-800">--</div>
+                    <div id="aiGlobalScoreMeta" class="text-[10px] uppercase font-semibold text-slate-400">
+                        No assessments
+                    </div>
+                </div>
                 <div class="text-right">
                     <label class="block text-xs font-semibold uppercase text-slate-400">Daily Capacity (Min)</label>
                     <input type="number" id="dailyCap" value="120" onchange="render()"
@@ -140,26 +147,6 @@
             <div id="overflowNotice"
                 class="mt-6 p-4 bg-amber-50 text-amber-700 rounded-xl text-sm hidden border border-amber-100">
                 ⚠️ Some topics have been deferred to tomorrow to prevent burnout.
-            </div>
-            <div id="aiTagReadinessSection" class="mt-6 bg-white p-5 rounded-2xl shadow-sm border border-slate-100">
-                <div class="flex flex-col md:flex-row md:items-center md:justify-between gap-2 mb-4">
-                    <div>
-                        <h3 class="text-sm font-bold text-slate-700">AI Topic Readiness</h3>
-                        <div id="aiTagReadinessUpdated" class="text-xs text-slate-400 mt-1">
-                            Based on question-level AI assessments
-                        </div>
-                    </div>
-                </div>
-                <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
-                    <div class="rounded-xl border border-emerald-100 bg-emerald-50 p-4">
-                        <div class="text-xs uppercase tracking-wide text-emerald-700 font-semibold mb-3">What I Know</div>
-                        <div id="aiKnownTags" class="space-y-3"></div>
-                    </div>
-                    <div class="rounded-xl border border-amber-100 bg-amber-50 p-4">
-                        <div class="text-xs uppercase tracking-wide text-amber-700 font-semibold mb-3">What To Prepare</div>
-                        <div id="aiPrepareTags" class="space-y-3"></div>
-                    </div>
-                </div>
             </div>
         </section>
 
@@ -395,7 +382,7 @@
                                 <div id="aiAssessKnownTags" class="space-y-2"></div>
                             </div>
                             <div class="rounded-lg border border-amber-100 bg-white p-3">
-                                <div class="text-xs uppercase tracking-wide text-amber-700 font-semibold mb-2">What To Prepare</div>
+                                <div class="text-xs uppercase tracking-wide text-amber-700 font-semibold mb-2">What I Don't Know</div>
                                 <div id="aiAssessPrepareTags" class="space-y-2"></div>
                             </div>
                         </div>
@@ -408,6 +395,42 @@
                                 class="px-3 py-2 rounded-lg border border-slate-200 text-slate-700 text-xs font-semibold hover:bg-slate-100">
                                 Cancel
                             </button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div id="topicAiSummaryModal" class="fixed inset-0 z-50 hidden">
+        <div class="absolute inset-0 bg-slate-900/60" onclick="closeTopicAiSummaryModal()"></div>
+        <div class="relative z-10 min-h-screen flex items-center justify-center p-4">
+            <div class="w-full max-w-3xl bg-white rounded-2xl shadow-xl border border-slate-200">
+                <div class="px-5 py-4 border-b border-slate-100 flex items-center justify-between gap-3">
+                    <div>
+                        <h3 id="topicAiSummaryTitle" class="text-lg font-bold text-slate-800">AI Summary</h3>
+                        <div id="topicAiSummaryTags" class="mt-2 flex flex-wrap gap-1"></div>
+                    </div>
+                    <button onclick="closeTopicAiSummaryModal()"
+                        class="text-slate-400 hover:text-slate-600 text-sm font-semibold">Close</button>
+                </div>
+                <div class="p-5 max-h-[78vh] overflow-y-auto">
+                    <div class="rounded-xl border border-slate-100 bg-slate-50 p-4 mb-4">
+                        <div class="text-xs uppercase tracking-wide text-slate-400 font-semibold">Assessment</div>
+                        <div class="mt-2 text-sm text-slate-700">
+                            Score: <span id="topicAiSummaryScore" class="font-bold text-slate-900">--</span>
+                            <span id="topicAiSummaryMeta" class="text-slate-400"></span>
+                        </div>
+                    </div>
+                    <div id="topicAiSummaryEmpty" class="hidden rounded-xl border border-slate-100 bg-slate-50 p-4 text-sm text-slate-500"></div>
+                    <div id="topicAiSummaryContent" class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        <div class="rounded-xl border border-emerald-100 bg-emerald-50 p-4">
+                            <div class="text-xs uppercase tracking-wide text-emerald-700 font-semibold mb-3">What I Know</div>
+                            <div id="topicAiSummaryKnown" class="space-y-2"></div>
+                        </div>
+                        <div class="rounded-xl border border-amber-100 bg-amber-50 p-4">
+                            <div class="text-xs uppercase tracking-wide text-amber-700 font-semibold mb-3">What I Don't Know</div>
+                            <div id="topicAiSummaryPrepare" class="space-y-2"></div>
                         </div>
                     </div>
                 </div>
